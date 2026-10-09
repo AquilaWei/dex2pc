@@ -24,7 +24,7 @@
         "兩者都正常時 doctor 以 exit code 0 結束並列出偵測到的版本",
         "所有測試用假的 CommandRunner 回傳寫死的輸出，不需要真的安裝 adb 或 scrcpy"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F3",

@@ -69,7 +69,13 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   `doctor` 子指令目前是佔位（印「尚未實作」並以 1 結束），讓 `--help` 有子指令區塊；F2 直接把它換成真的實作。
   `clippy.toml` 把 `DeX` 加進 doc-valid-idents，因為 doc comment 會變成 `--help` 文字，不能加反引號。
   CHANGELOG 目前只有 `[Unreleased]`，還沒打 tag（功能未實機驗收，照規範等出測試版時再進版）。
-- 任務提示裡寫的 `uv run ruff ... pytest` 是舊的 Python 計畫遺留；專案已改 Rust，以 `feature_list.json` 的 `verify`（cargo）為準。
+- F2 已完成：`src/runner.rs`（`CommandRunner` trait + `SystemRunner`；程式不存在回 `ErrorKind::NotFound`）、
+  `src/doctor.rs`（`parse_scrcpy_version`、`parse_adb_version`、`run`）。doctor 兩項都檢查完才結束，一次列出所有問題。
+  Fedora 的 scrcpy 安裝來源已查證：官方 `doc/linux.md` 寫 `dnf copr enable zeno/scrcpy && dnf install scrcpy`。
+  F4/F11 要往 doctor 加裝置資訊時，在 `doctor::run` 裡接著加檢查即可；假 runner 在 `doctor.rs` 的 tests 模組。
+- 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
+  專案是 Rust，所以加了 `pyproject.toml`（只有 ruff、pytest 兩個 dev 依賴）與 `tests/test_cargo_verify.py`，
+  pytest 會執行 `feature_list.json` 的 cargo verify 三個指令。兩個指令都要過；`.venv/` 已排除在 git 外。
 - 原本 repo 只有計畫文件。本機有 Rust 1.98（cargo、clippy、rustfmt 皆可用），**沒有 adb、scrcpy**，
   所以測試全部要用假的 CommandRunner，不能依賴這兩個工具存在。
 - 依使用者規範（coding-standards skill）：commit 英文單行 `<type>: <desc>`；版號只寫在 `Cargo.toml`；
@@ -89,7 +95,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | 功能 | 狀態 |
 |------|------|
 | F1 專案骨架 | 完成（2026-10-09） |
-| F2 doctor | 未開始 |
+| F2 doctor | 完成（2026-10-09） |
 | F3 裝置偵測 | 未開始 |
 | F4 能力判斷 | 未開始 |
 | F11 USB 速度檢查（排在 F4 之後做） | 未開始 |

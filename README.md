@@ -4,14 +4,14 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中（0.1.0 骨架）**，只有 CLI 入口，`doctor`、`start` 等功能還在實作。
+> 目前狀態：**開發中（0.1.0）**，`doctor` 可檢查電腦端工具；裝置檢查、`start` 等功能還在實作。
 
 ## 需求
 
 - **電腦**：Fedora Linux（只支援 Linux）
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
 - **adb**：`sudo dnf install android-tools`
-- **scrcpy 3.0 以上**（需要 `--new-display`）
+- **scrcpy 3.0 以上**（需要 `--new-display`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
 - 建置需要 Rust（cargo）
 
@@ -21,6 +21,7 @@
 cargo build --release
 cargo run -- --help
 cargo run -- --version
+cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒
 ```
 
 開發時的檢查指令：
