@@ -109,6 +109,16 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   `expect(dead_code)` 從整個 `mod scrcpy` 縮到 `build_args` 一個函式，F7 接上後移除。
   clippy.toml 的 doc-valid-idents 加了 `XDG_CONFIG_HOME`（`--help` 文字不能有反引號）。
   CLI 整合測試只在子行程設定 `XDG_CONFIG_HOME`，不動測試行程的環境變數。
+- F7 已完成：`src/start.rs`（`run`、`dry_run`）與 `dex2pc start [--serial] [--dry-run] [覆寫參數]`。
+  `doctor::check` 是新的共用入口：檢查內容和輸出與 `doctor::run` 相同，全部就緒時回傳選到的序號；`run` 改成呼叫它。
+  `start` 一律帶 `--serial=<選到的序號>` 給 scrcpy，避免連多台時 scrcpy 選錯。
+  `--dry-run` 不經過 runner，結構上就不可能執行外部指令，也因此不選裝置（沒給 `--serial` 時指令裡沒有 serial）；
+  印出的指令以單引號處理含空白的參數，可直接貼到 shell。
+  scrcpy 經現有的 `CommandRunner::run`（`.output()`，**輸出被收集**）執行：好處是失敗時能把它的 stderr 印出來、F9 也能看
+  stderr 判斷是不是斷線；代價是 scrcpy 執行中的 INFO 訊息看不到，正常關閉時不印。若實機覺得需要即時 log，再考慮加一個繼承 stdio 的方法。
+  exit code：scrcpy 0 → 0；非 0 → 相同 code 並印「scrcpy 以 exit code N 結束：」與 stderr（stderr 空時改印 stdout）；
+  被訊號中止或無法執行 → 1；環境檢查不通過 → 1 且不啟動。Ctrl+C 時 SIGINT 同時送到 dex2pc 與 scrcpy，沒有特別處理（F8 要還原設定時才需要攔）。
+  `scrcpy::build_args` 上的 `expect(dead_code)` 已移除。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -139,7 +149,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F11 USB 速度檢查（排在 F4 之後做） | 完成（2026-10-09） |
 | F5 scrcpy 指令組裝 | 完成（2026-10-09） |
 | F6 設定檔 | 完成（2026-10-09；審查後補 `--audio` 雙向覆寫，與 `--no-audio` 同時給時最後一個為準） |
-| F7 start | 未開始 |
+| F7 start | 完成（2026-10-09；實機未驗收） |
 | F8 手機端設定 | 未開始 |
 | F9 自動重連 | 未開始 |
 | F10 桌面整合與交付 | 未開始 |

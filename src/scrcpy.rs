@@ -178,8 +178,6 @@ impl Default for Options {
 /// `serial` 是 `device::select` 選出的裝置；給了就加 `--serial`，
 /// 避免連多台手機時 scrcpy 自己報錯。不合法的解析度與 DPI 在解析 `Resolution`、`Dpi` 時就被擋下，
 /// 所以這裡不會失敗。
-// TODO: F7（`dex2pc start`）接上後移除 - 在那之前只有測試用到
-#[cfg_attr(not(test), expect(dead_code))]
 pub fn build_args(options: &Options, serial: Option<&str>) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(serial) = serial {

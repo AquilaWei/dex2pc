@@ -134,3 +134,55 @@ fn config_with_invalid_resolution_flag_is_rejected() {
             .contains("解析度「0x1080」不合法")
     );
 }
+
+#[test]
+fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(
+        dir.path().join("dex2pc/config.toml"),
+        "resolution = '2560x1440'\nvideo_bit_rate = '16M'\n",
+    )
+    .unwrap();
+    // PATH 指向空目錄：若 --dry-run 誤呼叫 adb 或 scrcpy 會找不到程式而失敗
+    let empty_path = tempfile::tempdir().unwrap();
+
+    let output = dex2pc()
+        .args([
+            "start",
+            "--dry-run",
+            "--serial",
+            "R5CW1234ABC",
+            "--no-audio",
+        ])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("PATH", empty_path.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio\n"
+    );
+}
+
+#[test]
+fn start_without_adb_or_scrcpy_exits_non_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let empty_path = tempfile::tempdir().unwrap();
+
+    let output = dex2pc()
+        .arg("start")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("PATH", empty_path.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("環境未就緒，未啟動 scrcpy")
+    );
+}

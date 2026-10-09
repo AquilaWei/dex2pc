@@ -101,7 +101,7 @@
         "scrcpy 非 0 結束時，dex2pc 以相同 exit code 結束並印出 scrcpy 的錯誤訊息",
         "README 新增「快速開始」：接上 USB-C 線、開 USB 偵錯、執行 `dex2pc start`"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F8",

@@ -4,6 +4,7 @@ mod device;
 mod doctor;
 mod runner;
 mod scrcpy;
+mod start;
 mod usb;
 
 use std::env;
@@ -31,6 +32,17 @@ enum Command {
         /// 要使用的裝置序號（adb devices 列出的第一欄）；只連一台時可省略
         #[arg(long, short)]
         serial: Option<String>,
+    },
+    /// 檢查環境後以 DeX 虛擬顯示模式啟動 scrcpy，DeX 會開成電腦上的一個視窗；關閉視窗即結束
+    Start {
+        /// 要使用的裝置序號（adb devices 列出的第一欄）；只連一台時可省略
+        #[arg(long, short)]
+        serial: Option<String>,
+        /// 只印出會執行的 scrcpy 指令，不檢查環境也不執行任何外部指令
+        #[arg(long)]
+        dry_run: bool,
+        #[command(flatten)]
+        overrides: config::Overrides,
     },
     /// 顯示設定檔位置與合併 CLI 參數後實際生效的設定；設定檔是 XDG_CONFIG_HOME 下的 dex2pc/config.toml，未設定時用 ~/.config
     Config {
@@ -60,6 +72,17 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Command::Start {
+            serial,
+            dry_run,
+            overrides,
+        } => match start(serial.as_deref(), dry_run, overrides) {
+            Ok(code) => ExitCode::from(code),
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Config { path, overrides } => match show_config(path, overrides) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
@@ -68,6 +91,27 @@ fn main() -> ExitCode {
             }
         },
     }
+}
+
+/// 讀設定檔並套用 CLI 覆寫後啟動；回傳 dex2pc 的 exit code（scrcpy 失敗時沿用它的 code）。
+fn start(
+    serial: Option<&str>,
+    dry_run: bool,
+    overrides: config::Overrides,
+) -> Result<u8, Box<dyn std::error::Error>> {
+    let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
+    let options = overrides.apply(config::load(&path)?.unwrap_or_default());
+    if dry_run {
+        start::dry_run(&options, serial, &mut io::stdout())?;
+        return Ok(0);
+    }
+    Ok(start::run(
+        &SystemRunner,
+        &options,
+        serial,
+        Path::new("/sys"),
+        &mut io::stdout(),
+    )?)
 }
 
 fn show_config(

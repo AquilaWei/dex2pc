@@ -64,21 +64,32 @@ pub fn run(
     sysfs_root: &Path,
     out: &mut dyn Write,
 ) -> io::Result<bool> {
+    Ok(check(runner, serial, sysfs_root, out)?.is_some())
+}
+
+/// 和 [`run`] 做同樣的檢查並印出同樣的內容，但全部就緒時回傳選到的裝置序號，
+/// 讓 `start` 啟動 scrcpy 時指定同一台；任一項不通過回傳 `Ok(None)`。
+///
+/// # Errors
+/// 只有寫入 `out` 失敗時回傳錯誤。
+pub fn check(
+    runner: &dyn CommandRunner,
+    serial: Option<&str>,
+    sysfs_root: &Path,
+    out: &mut dyn Write,
+) -> io::Result<Option<String>> {
     let adb_ok = check_adb(runner, out)?;
     let scrcpy_ok = check_scrcpy(runner, out)?;
     // adb 不能用就列不出裝置，前面已經報過錯，不重複
-    let device_ok = if adb_ok {
-        match check_device(runner, serial, out)? {
-            Some(selected) => {
-                report_usb_speed(sysfs_root, &selected, out)?;
-                check_capability(runner, &selected, out)?
-            }
-            None => false,
-        }
-    } else {
-        false
+    if !adb_ok {
+        return Ok(None);
+    }
+    let Some(selected) = check_device(runner, serial, out)? else {
+        return Ok(None);
     };
-    Ok(adb_ok && scrcpy_ok && device_ok)
+    report_usb_speed(sysfs_root, &selected, out)?;
+    let capable = check_capability(runner, &selected, out)?;
+    Ok((scrcpy_ok && capable).then_some(selected))
 }
 
 /// 選到裝置時回傳它的序號，之後的 adb 指令都用 `-s` 指定同一台。

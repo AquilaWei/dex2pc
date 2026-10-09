@@ -4,7 +4,8 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定；`start` 等功能還在實作。
+> 目前狀態：**開發中**，`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定；
+> 手機端設定、自動重連、桌面捷徑還在實作，**尚未在實機上驗收**。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
 
 ## 需求
@@ -15,6 +16,26 @@
 - **scrcpy 3.0 以上**（需要 `--new-display`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
 - 建置需要 Rust（cargo）
+
+## 快速開始
+
+1. 手機開啟 **USB 偵錯**：設定 → 關於手機 → 軟體資訊 → 連點「版本號碼」7 次開啟開發人員選項，再到 設定 → 開發人員選項 → 開啟「USB 偵錯」
+2. 用**支援資料傳輸的 USB-C 線**接上電腦，手機跳出「允許 USB 偵錯？」時按**允許**
+3. 執行：
+
+```bash
+cargo run --release -- start
+```
+
+（已用 `cargo install --path .` 安裝時直接執行 **`dex2pc start`**。）
+
+`start` 會先做和 `doctor` 一樣的檢查，全部通過才開啟 **Samsung DeX** 視窗；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
+有問題時照畫面上的訊息處理，或先跑 `cargo run -- doctor` 看完整檢查結果。
+
+```bash
+cargo run -- start --dry-run               # 只印出會執行的 scrcpy 指令，不連手機
+cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
+```
 
 ## 建置與執行
 
