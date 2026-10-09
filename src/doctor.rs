@@ -1,6 +1,7 @@
 use std::fmt;
 use std::io::{self, ErrorKind, Write};
 
+use crate::capability::{self, DeviceInfo};
 use crate::device;
 use crate::runner::CommandRunner;
 
@@ -49,10 +50,11 @@ pub fn parse_adb_version(output: &str) -> Option<&str> {
 /// 檢查電腦端的 adb 與 scrcpy，以及連接的手機，把結果寫到 `out`。
 ///
 /// 工具兩項都會檢查完才結束，讓使用者一次看到所有問題；adb 可用時再選裝置
-/// （`serial` 為 `None` 時自動選唯一一台可用的）。回傳 `Ok(true)` 表示全部就緒。
+/// （`serial` 為 `None` 時自動選唯一一台可用的），選到後讀取型號與 One UI 版本，
+/// 判定能否以 DeX 虛擬顯示模式使用。回傳 `Ok(true)` 表示全部就緒。
 ///
 /// # Errors
-/// 只有寫入 `out` 失敗時回傳錯誤；工具缺少、版本不符或選不到裝置是回傳 `Ok(false)`。
+/// 只有寫入 `out` 失敗時回傳錯誤；工具缺少、版本不符、選不到裝置或裝置不支援是回傳 `Ok(false)`。
 pub fn run(
     runner: &dyn CommandRunner,
     serial: Option<&str>,
@@ -61,33 +63,83 @@ pub fn run(
     let adb_ok = check_adb(runner, out)?;
     let scrcpy_ok = check_scrcpy(runner, out)?;
     // adb 不能用就列不出裝置，前面已經報過錯，不重複
-    let device_ok = adb_ok && check_device(runner, serial, out)?;
+    let device_ok = if adb_ok {
+        match check_device(runner, serial, out)? {
+            Some(selected) => check_capability(runner, &selected, out)?,
+            None => false,
+        }
+    } else {
+        false
+    };
     Ok(adb_ok && scrcpy_ok && device_ok)
 }
 
+/// 選到裝置時回傳它的序號，之後的 adb 指令都用 `-s` 指定同一台。
 fn check_device(
     runner: &dyn CommandRunner,
     serial: Option<&str>,
     out: &mut dyn Write,
-) -> io::Result<bool> {
+) -> io::Result<Option<String>> {
     let output = match runner.run("adb", &["devices", "-l"]) {
         Ok(output) if output.success() => output,
         Ok(output) => {
             writeln!(out, "adb devices 執行失敗：{}", output.stderr.trim())?;
-            return Ok(false);
+            return Ok(None);
         }
         Err(err) => {
             writeln!(out, "無法執行 adb devices：{err}")?;
-            return Ok(false);
+            return Ok(None);
         }
     };
     match device::select(&device::parse_devices(&output.stdout), serial) {
         Ok(device) => {
             writeln!(out, "裝置：{device}")?;
-            Ok(true)
+            Ok(Some(device.serial.clone()))
         }
         Err(err) => {
             writeln!(out, "{err}")?;
+            Ok(None)
+        }
+    }
+}
+
+/// 讀取 `serial` 那台的 getprop，印出型號與 One UI 版本，回傳是否支援 DeX 虛擬顯示。
+fn check_capability(
+    runner: &dyn CommandRunner,
+    serial: &str,
+    out: &mut dyn Write,
+) -> io::Result<bool> {
+    // 一次讀全部屬性，比逐一 `getprop <key>` 少幾趟 adb 來回
+    let output = match runner.run("adb", &["-s", serial, "shell", "getprop"]) {
+        Ok(output) if output.success() => output,
+        Ok(output) => {
+            writeln!(out, "讀取裝置資訊失敗：{}", output.stderr.trim())?;
+            return Ok(false);
+        }
+        Err(err) => {
+            writeln!(out, "無法執行 adb shell getprop：{err}")?;
+            return Ok(false);
+        }
+    };
+    let info = DeviceInfo::from_getprop(&output.stdout);
+    let one_ui = info
+        .one_ui
+        .as_deref()
+        .and_then(capability::parse_one_ui)
+        .map_or_else(|| "無".to_string(), |v| v.to_string());
+    writeln!(
+        out,
+        "型號：{}（Android SDK {}，One UI {one_ui}）",
+        info.model.as_deref().unwrap_or("未知"),
+        info.sdk.as_deref().unwrap_or("未知"),
+    )?;
+    match capability::check(&info) {
+        Ok(_) => {
+            writeln!(out, "判定：支援 DeX 虛擬顯示")?;
+            Ok(true)
+        }
+        Err(err) => {
+            writeln!(out, "判定：{err}")?;
             Ok(false)
         }
     }
@@ -162,6 +214,9 @@ mod tests {
     const SCRCPY_30_OUTPUT: &str = "scrcpy 3.0 <https://github.com/Genymobile/scrcpy>\n";
     const SCRCPY_225_OUTPUT: &str = "scrcpy 2.2.5 <https://github.com/Genymobile/scrcpy>\n";
     const ONE_DEVICE: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\n\n";
+    const S23_ONE_UI_80: &str = "[ro.build.version.oneui]: [80000]\n[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S918B]\n";
+    const S23_ONE_UI_71: &str = "[ro.build.version.oneui]: [70100]\n[ro.build.version.sdk]: [35]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S918B]\n";
+    const PIXEL: &str = "[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [Google]\n[ro.product.model]: [Pixel 9]\n";
     const NO_DEVICE: &str = "List of devices attached\n\n";
     const TWO_DEVICES: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\nRFCX9876XYZ            device usb:3-4 product:gts9xxx model:SM_X710 device:gts9 transport_id:2\n\n";
 
@@ -178,27 +233,35 @@ mod tests {
         Denied,
     }
 
-    /// 只回應 `adb version`、`scrcpy --version`、`adb devices -l`；參數不對就 panic，讓傳錯參數的實作測試失敗。
+    /// 只回應 `adb version`、`scrcpy --version`、`adb devices -l`、`adb -s <序號> shell getprop`；
+    /// 參數不對就 panic，讓傳錯參數的實作測試失敗。getprop 用的序號記在 `calls` 裡由測試檢查。
     struct FakeRunner {
         adb: Reply,
         scrcpy: Reply,
         devices: Reply,
+        getprop: Reply,
         calls: RefCell<Vec<String>>,
     }
 
     impl FakeRunner {
-        /// `adb devices -l` 預設回傳一台已授權的裝置。
+        /// `adb devices -l` 預設回傳一台已授權的裝置，getprop 預設是 One UI 8.0 的 Samsung。
         fn new(adb: Reply, scrcpy: Reply) -> Self {
             Self {
                 adb,
                 scrcpy,
                 devices: Reply::Ok(ONE_DEVICE),
+                getprop: Reply::Ok(S23_ONE_UI_80),
                 calls: RefCell::new(Vec::new()),
             }
         }
 
         fn with_devices(mut self, devices: Reply) -> Self {
             self.devices = devices;
+            self
+        }
+
+        fn with_getprop(mut self, getprop: Reply) -> Self {
+            self.getprop = getprop;
             self
         }
     }
@@ -212,6 +275,7 @@ mod tests {
                 ("adb", ["version"]) => self.adb,
                 ("scrcpy", ["--version"]) => self.scrcpy,
                 ("adb", ["devices", "-l"]) => self.devices,
+                ("adb", ["-s", _, "shell", "getprop"]) => self.getprop,
                 _ => panic!("unexpected command: {program} {args:?}"),
             };
             match reply {
@@ -273,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn doctor_runs_adb_version_then_scrcpy_version_then_adb_devices() {
+    fn doctor_runs_adb_version_then_scrcpy_version_then_adb_devices_then_getprop() {
         let runner = FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT));
 
         doctor(&runner);
@@ -283,7 +347,8 @@ mod tests {
             vec![
                 "adb version".to_string(),
                 "scrcpy --version".to_string(),
-                "adb devices -l".to_string()
+                "adb devices -l".to_string(),
+                "adb -s R5CW1234ABC shell getprop".to_string()
             ]
         );
     }
@@ -310,7 +375,7 @@ mod tests {
         assert!(ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n"
+            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
@@ -347,7 +412,75 @@ mod tests {
         );
 
         assert!(ok);
-        assert!(out.ends_with("裝置：RFCX9876XYZ（SM_X710）\n"));
+        assert!(out.contains("裝置：RFCX9876XYZ（SM_X710）\n"));
+    }
+
+    #[test]
+    fn doctor_with_serial_reads_getprop_from_that_device() {
+        let runner = FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+            .with_devices(Reply::Ok(TWO_DEVICES));
+
+        doctor_with_serial(&runner, Some("RFCX9876XYZ"));
+
+        assert_eq!(
+            runner.calls.borrow().last().unwrap(),
+            "adb -s RFCX9876XYZ shell getprop"
+        );
+    }
+
+    #[test]
+    fn doctor_without_device_does_not_read_getprop() {
+        let runner = FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+            .with_devices(Reply::Ok(NO_DEVICE));
+
+        doctor(&runner);
+
+        assert_eq!(runner.calls.borrow().last().unwrap(), "adb devices -l");
+    }
+
+    #[test]
+    fn doctor_with_one_ui_7_1_fails_and_asks_for_one_ui_8() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_getprop(Reply::Ok(S23_ONE_UI_71)),
+        );
+
+        assert!(!ok);
+        assert!(out.ends_with(
+            "型號：SM-S918B（Android SDK 35，One UI 7.1）\n判定：不支援：One UI 7.1 的 DeX 無法在虛擬顯示器上執行，需要 One UI 8.0 以上\n"
+        ));
+    }
+
+    #[test]
+    fn doctor_with_non_samsung_device_fails_and_explains_why() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_getprop(Reply::Ok(PIXEL)),
+        );
+
+        assert!(!ok);
+        assert!(out.ends_with(
+            "型號：Pixel 9（Android SDK 36，One UI 無）\n判定：不支援：這不是 Samsung 裝置（製造商：Google），沒有 DeX\n"
+        ));
+    }
+
+    #[test]
+    fn doctor_with_getprop_nonzero_exit_fails_and_reports_stderr() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_getprop(Reply::Exit(1, "error: device offline\n")),
+        );
+
+        assert!(!ok);
+        assert!(out.ends_with("讀取裝置資訊失敗：error: device offline\n"));
+    }
+
+    #[test]
+    fn doctor_with_scrcpy_missing_still_reports_device_capability() {
+        let (ok, out) = doctor(&FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Missing));
+
+        assert!(!ok);
+        assert!(out.ends_with("判定：支援 DeX 虛擬顯示\n"));
     }
 
     #[test]
@@ -382,7 +515,7 @@ mod tests {
         assert!(ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n"
+            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
@@ -453,7 +586,7 @@ mod tests {
         assert!(!ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n裝置：R5CW1234ABC（SM_S918B）\n"
+            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
@@ -475,7 +608,7 @@ mod tests {
         assert!(!ok);
         assert_eq!(
             out,
-            "adb：1.0.41\n無法執行 scrcpy：permission denied\n裝置：R5CW1234ABC（SM_S918B）\n"
+            "adb：1.0.41\n無法執行 scrcpy：permission denied\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 

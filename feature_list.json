@@ -50,7 +50,7 @@
         "`dex2pc doctor` 在有裝置時一併印出型號、One UI 版本與判定結果",
         "測試以假的 getprop 回傳值驅動，不需實機"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F11",

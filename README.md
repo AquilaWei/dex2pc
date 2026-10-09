@@ -4,7 +4,7 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具與手機連線；One UI 版本檢查、`start` 等功能還在實作。
+> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線與 One UI 版本；`start` 等功能還在實作。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
 
 ## 需求
@@ -22,7 +22,7 @@
 cargo build --release
 cargo run -- --help
 cargo run -- --version
-cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連接並授權
+cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連接並授權、是否為 One UI 8 以上
 cargo run -- doctor --serial R5CW1234ABC   # 連了多台手機時指定其中一台
 ```
 

@@ -82,6 +82,11 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   除了 unauthorized，也處理 `no permissions`（Fedora 上 udev 權限不足常見）與 offline 等其他狀態。
   沒給 serial 時只算 `device` 狀態的裝置：一台 ready + 一台 unauthorized 會自動選 ready 那台。
   F4 要讀 getprop 時用 `adb -s <serial> shell getprop ...`，接在 `doctor::check_device` 成功之後。
+- F4 已完成：`src/capability.rs`（`parse_one_ui`、`DeviceInfo::from_getprop`、`check`，皆為純函式）。
+  `doctor::check_device` 改成回傳選到的序號，接著跑一次不帶參數的 `adb -s <serial> shell getprop`（一次讀全部屬性），
+  印「型號：…（Android SDK …，One UI …）」與「判定：…」。製造商看 `ro.product.manufacturer`（不分大小寫）。
+  Samsung 但讀不到/解析不了 oneui 也判定不支援。F7 `start` 直接重用 `capability::check`。
+  getprop 輸出格式 `[key]: [value]` 與屬性名稱憑記憶寫，未在實機確認（需要實機驗收）。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -108,7 +113,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F1 專案骨架 | 完成（2026-10-09） |
 | F2 doctor | 完成（2026-10-09） |
 | F3 裝置偵測 | 完成（2026-10-09） |
-| F4 能力判斷 | 未開始 |
+| F4 能力判斷 | 完成（2026-10-09） |
 | F11 USB 速度檢查（排在 F4 之後做） | 未開始 |
 | F5 scrcpy 指令組裝 | 未開始 |
 | F6 設定檔 | 未開始 |
