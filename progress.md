@@ -65,7 +65,12 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 
 ## 給下一個 session 的注意事項
 
-- 目前 repo 只有計畫文件。本機有 Rust 1.98（cargo、clippy、rustfmt 皆可用），**沒有 adb、scrcpy**，
+- F1 已完成：`Cargo.toml`（clap 4 derive、clippy pedantic 設為 warn）、`src/main.rs`、`tests/cli.rs`、README、CHANGELOG。
+  `doctor` 子指令目前是佔位（印「尚未實作」並以 1 結束），讓 `--help` 有子指令區塊；F2 直接把它換成真的實作。
+  `clippy.toml` 把 `DeX` 加進 doc-valid-idents，因為 doc comment 會變成 `--help` 文字，不能加反引號。
+  CHANGELOG 目前只有 `[Unreleased]`，還沒打 tag（功能未實機驗收，照規範等出測試版時再進版）。
+- 任務提示裡寫的 `uv run ruff ... pytest` 是舊的 Python 計畫遺留；專案已改 Rust，以 `feature_list.json` 的 `verify`（cargo）為準。
+- 原本 repo 只有計畫文件。本機有 Rust 1.98（cargo、clippy、rustfmt 皆可用），**沒有 adb、scrcpy**，
   所以測試全部要用假的 CommandRunner，不能依賴這兩個工具存在。
 - 依使用者規範（coding-standards skill）：commit 英文單行 `<type>: <desc>`；版號只寫在 `Cargo.toml`；
   功能與測試同一個 commit；CLAUDE.md、`.claude/`、`target/` 不進 git；Cargo.lock 要提交（binary crate）。
@@ -83,7 +88,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 
 | 功能 | 狀態 |
 |------|------|
-| F1 專案骨架 | 未開始 |
+| F1 專案骨架 | 完成（2026-10-09） |
 | F2 doctor | 未開始 |
 | F3 裝置偵測 | 未開始 |
 | F4 能力判斷 | 未開始 |

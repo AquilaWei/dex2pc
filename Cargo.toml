@@ -1,0 +1,12 @@
+[package]
+name = "dex2pc"
+version = "0.1.0"
+edition = "2024"
+description = "Show Samsung DeX as a window on a Linux PC over a USB-C cable, driven by scrcpy"
+license = "Apache-2.0"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

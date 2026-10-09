@@ -11,7 +11,7 @@
         "Cargo.lock 已提交；.gitignore 排除 target/、CLAUDE.md、.claude/",
         "README 寫明專案目的（透過 USB-C 線把 Samsung DeX 以視窗形式顯示在 Linux 電腦上，並用電腦鍵鼠操作）、需求（Fedora、One UI 8 以上、adb、scrcpy）、怎麼建置與執行，並用一小段說明 scrcpy 是什麼、為什麼畫面是經 USB 資料通道傳送而不是 DisplayPort"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F2",
@@ -145,7 +145,11 @@
   "questions": [
     {
       "question": "dex2pc 要「包裝 scrcpy」（呼叫現成的 scrcpy 負責畫面與鍵鼠，dex2pc 負責檢查、設定、一鍵啟動），還是不做程式、只要一份教學與啟動指令？",
-      "options": ["包裝 scrcpy，做成一鍵啟動工具（照此計畫）", "只要教學與一行啟動指令", "先手動試 scrcpy 能不能跑出 DeX，再決定"]
+      "options": [
+        "包裝 scrcpy，做成一鍵啟動工具（照此計畫）",
+        "只要教學與一行啟動指令",
+        "先手動試 scrcpy 能不能跑出 DeX，再決定"
+      ]
     }
   ]
 }
