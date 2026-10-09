@@ -73,6 +73,11 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   `src/doctor.rs`（`parse_scrcpy_version`、`parse_adb_version`、`run`）。doctor 兩項都檢查完才結束，一次列出所有問題。
   Fedora 的 scrcpy 安裝來源已查證：官方 `doc/linux.md` 寫 `dnf copr enable zeno/scrcpy && dnf install scrcpy`。
   F4/F11 要往 doctor 加裝置資訊時，在 `doctor::run` 裡接著加檢查即可；假 runner 在 `doctor.rs` 的 tests 模組。
+  審查後補強：假 runner 只回應確切的 `adb version`、`scrcpy --version`，其他參數直接 panic，並記錄呼叫順序；
+  回應可模擬成功、非 0 結束、找不到程式、權限錯誤。測試涵蓋 scrcpy 恰為 3.0 時通過，
+  以及任一工具失敗時仍檢查另一個。已用改錯參數、改門檻、提早結束這幾種錯誤實作確認測試會失敗。
+- README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
+  F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
   專案是 Rust，所以加了 `pyproject.toml`（只有 ruff、pytest 兩個 dev 依賴）與 `tests/test_cargo_verify.py`，
   pytest 會執行 `feature_list.json` 的 cargo verify 三個指令。兩個指令都要過；`.venv/` 已排除在 git 外。
