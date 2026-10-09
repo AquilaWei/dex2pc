@@ -26,12 +26,14 @@ cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連�
 cargo run -- doctor --serial R5CW1234ABC   # 連了多台手機時指定其中一台
 cargo run -- config     # 顯示設定檔位置與實際生效的設定
 cargo run -- config --path   # 只印設定檔位置
+cargo run -- config --audio  # 預覽覆寫後的設定（設定檔 audio = false 時重新開啟音訊）
 ```
 
 ## 設定檔
 
 位置：**`$XDG_CONFIG_HOME/dex2pc/config.toml`**（沒設 `XDG_CONFIG_HOME` 時是 `~/.config/dex2pc/config.toml`）。
 檔案不存在就用內建預設值；每個欄位都可省略，CLI 參數（例如 `--resolution 3840x2160`）會覆寫設定檔。
+音訊可用 `--audio` / `--no-audio` 雙向覆寫設定檔的 `audio`；兩個都給時以**最後一個**為準。
 
 ```toml
 resolution = "1920x1080"   # 虛擬顯示器解析度

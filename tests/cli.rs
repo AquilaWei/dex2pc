@@ -81,6 +81,23 @@ fn config_resolution_flag_overrides_config_file() {
 }
 
 #[test]
+fn config_audio_flag_overrides_audio_false_in_config_file() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "audio = false\n").unwrap();
+
+    let output = dex2pc()
+        .args(["config", "--audio"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("audio = true\n"));
+}
+
+#[test]
 fn config_with_unknown_field_exits_non_zero_naming_path_and_field() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("dex2pc")).unwrap();

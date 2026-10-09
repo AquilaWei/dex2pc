@@ -146,8 +146,11 @@ pub struct Overrides {
     /// 影像位元率，例如 16M；小字模糊時調高
     #[arg(long)]
     pub video_bit_rate: Option<String>,
-    /// 不轉送手機音訊
-    #[arg(long)]
+    /// 轉送手機音訊，蓋過設定檔的 audio = false
+    #[arg(long, overrides_with = "no_audio")]
+    pub audio: bool,
+    /// 不轉送手機音訊；與 --audio 同時給時以最後一個為準
+    #[arg(long, overrides_with = "audio")]
     pub no_audio: bool,
     /// 鍵盤模式：sdk、uhid、aoa、disabled
     #[arg(long)]
@@ -161,7 +164,8 @@ pub struct Overrides {
 }
 
 impl Overrides {
-    /// 把有給的 CLI 參數蓋到 `options` 上。`--no-audio` 只能關掉音訊，不能把設定檔的 `audio = false` 打開。
+    /// 把有給的 CLI 參數蓋到 `options` 上。`--audio` 與 `--no-audio` 都沒給時沿用設定檔；
+    /// clap 的 `overrides_with` 保證兩者最多只有一個為 true（最後給的那個）。
     pub fn apply(self, mut options: Options) -> Options {
         if let Some(resolution) = self.resolution {
             options.resolution = resolution;
@@ -171,6 +175,9 @@ impl Overrides {
         }
         if self.video_bit_rate.is_some() {
             options.video_bit_rate = self.video_bit_rate;
+        }
+        if self.audio {
+            options.audio = true;
         }
         if self.no_audio {
             options.audio = false;
@@ -275,7 +282,22 @@ impl std::error::Error for ConfigError {}
 mod tests {
     use super::*;
 
+    use clap::Parser;
+
     use crate::scrcpy::build_args;
+
+    /// 用真正的 clap 解析 `Overrides`，`overrides_with` 才會生效。
+    #[derive(Parser)]
+    struct OverridesCli {
+        #[command(flatten)]
+        overrides: Overrides,
+    }
+
+    fn parse_overrides(args: &[&str]) -> Overrides {
+        OverridesCli::try_parse_from(std::iter::once("dex2pc").chain(args.iter().copied()))
+            .unwrap()
+            .overrides
+    }
 
     fn write_config(dir: &tempfile::TempDir, text: &str) -> PathBuf {
         let path = dir.path().join("config.toml");
@@ -560,6 +582,7 @@ mod tests {
             resolution: Some("2560x1440".parse().unwrap()),
             dpi: Some("284".parse().unwrap()),
             video_bit_rate: Some("20M".to_string()),
+            audio: false,
             no_audio: true,
             keyboard: Some(InputMode::Uhid),
             mouse: Some(InputMode::Sdk),
@@ -579,6 +602,47 @@ mod tests {
                 "--mouse=sdk",
             ]
         );
+    }
+
+    #[test]
+    fn audio_flag_reenables_audio_turned_off_in_config_file() {
+        let from_file = Options {
+            audio: false,
+            ..Options::default()
+        };
+
+        let options = parse_overrides(&["--audio"]).apply(from_file);
+
+        assert_eq!(
+            build_args(&options, None),
+            ["--new-display=1920x1080/160", "--window-title=Samsung DeX"]
+        );
+    }
+
+    #[test]
+    fn audio_flags_without_either_keep_config_file_audio_off() {
+        let from_file = Options {
+            audio: false,
+            ..Options::default()
+        };
+
+        let options = parse_overrides(&[]).apply(from_file);
+
+        assert!(!options.audio);
+    }
+
+    #[test]
+    fn audio_flags_no_audio_then_audio_last_one_wins_audio_on() {
+        let options = parse_overrides(&["--no-audio", "--audio"]).apply(Options::default());
+
+        assert!(options.audio);
+    }
+
+    #[test]
+    fn audio_flags_audio_then_no_audio_last_one_wins_audio_off() {
+        let options = parse_overrides(&["--audio", "--no-audio"]).apply(Options::default());
+
+        assert!(!options.audio);
     }
 
     #[test]
