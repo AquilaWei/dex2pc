@@ -1,1 +1,1 @@
-doc-valid-idents = ["DeX", ".."]
+doc-valid-idents = ["DeX", "XDG_CONFIG_HOME", ".."]

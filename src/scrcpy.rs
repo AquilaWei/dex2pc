@@ -100,6 +100,46 @@ impl InputMode {
     }
 }
 
+impl fmt::Display for InputMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_arg())
+    }
+}
+
+impl FromStr for InputMode {
+    type Err = InvalidInputMode;
+
+    /// 接受 scrcpy 的寫法 `sdk`、`uhid`、`aoa`、`disabled`（區分大小寫，與 scrcpy 一致）。
+    ///
+    /// # Errors
+    /// 其他字串回傳 `InvalidInputMode`。
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sdk" => Ok(Self::Sdk),
+            "uhid" => Ok(Self::Uhid),
+            "aoa" => Ok(Self::Aoa),
+            "disabled" => Ok(Self::Disabled),
+            _ => Err(InvalidInputMode(s.to_string())),
+        }
+    }
+}
+
+/// 鍵鼠模式的字串不是 scrcpy 認得的值；`Display` 列出可用的值。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidInputMode(pub String);
+
+impl fmt::Display for InvalidInputMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "鍵鼠模式「{}」不合法：可用 sdk、uhid、aoa、disabled",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InvalidInputMode {}
+
 /// 啟動 DeX 視窗用的 scrcpy 選項；`Default` 是沒有設定檔與 CLI 參數時的內建值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
@@ -138,6 +178,8 @@ impl Default for Options {
 /// `serial` 是 `device::select` 選出的裝置；給了就加 `--serial`，
 /// 避免連多台手機時 scrcpy 自己報錯。不合法的解析度與 DPI 在解析 `Resolution`、`Dpi` 時就被擋下，
 /// 所以這裡不會失敗。
+// TODO: F7（`dex2pc start`）接上後移除 - 在那之前只有測試用到
+#[cfg_attr(not(test), expect(dead_code))]
 pub fn build_args(options: &Options, serial: Option<&str>) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(serial) = serial {
@@ -394,6 +436,29 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "解析度「0x1080」不合法：格式為 寬x高，寬高都要是正整數，例如 1920x1080"
+        );
+    }
+
+    #[test]
+    fn input_mode_parses_uhid() {
+        assert_eq!("uhid".parse::<InputMode>(), Ok(InputMode::Uhid));
+    }
+
+    #[test]
+    fn input_mode_unknown_value_is_rejected() {
+        assert_eq!(
+            "hid".parse::<InputMode>(),
+            Err(InvalidInputMode("hid".to_string()))
+        );
+    }
+
+    #[test]
+    fn invalid_input_mode_message_lists_accepted_values() {
+        let err = InvalidInputMode("hid".to_string());
+
+        assert_eq!(
+            err.to_string(),
+            "鍵鼠模式「hid」不合法：可用 sdk、uhid、aoa、disabled"
         );
     }
 

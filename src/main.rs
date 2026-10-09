@@ -1,12 +1,12 @@
 mod capability;
+mod config;
 mod device;
 mod doctor;
 mod runner;
-// TODO: F7（`dex2pc start`）接上後移除 - 在那之前只有測試用到
-#[cfg_attr(not(test), expect(dead_code))]
 mod scrcpy;
 mod usb;
 
+use std::env;
 use std::io;
 use std::path::Path;
 use std::process::ExitCode;
@@ -32,6 +32,14 @@ enum Command {
         #[arg(long, short)]
         serial: Option<String>,
     },
+    /// 顯示設定檔位置與合併 CLI 參數後實際生效的設定；設定檔是 XDG_CONFIG_HOME 下的 dex2pc/config.toml，未設定時用 ~/.config
+    Config {
+        /// 只印設定檔路徑
+        #[arg(long)]
+        path: bool,
+        #[command(flatten)]
+        overrides: config::Overrides,
+    },
 }
 
 fn main() -> ExitCode {
@@ -52,5 +60,28 @@ fn main() -> ExitCode {
                 }
             }
         }
+        Command::Config { path, overrides } => match show_config(path, overrides) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
     }
+}
+
+fn show_config(
+    path_only: bool,
+    overrides: config::Overrides,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
+    if path_only {
+        println!("{}", path.display());
+        return Ok(());
+    }
+    let loaded = config::load(&path)?;
+    let from_file = loaded.is_some();
+    let options = overrides.apply(loaded.unwrap_or_default());
+    config::show(&mut io::stdout(), &path, from_file, &options)?;
+    Ok(())
 }

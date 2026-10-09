@@ -99,6 +99,16 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   鍵鼠模式與位元率是 `Option`，`None` 時不加參數，沿用 scrcpy 預設；位元率字串原樣傳給 scrcpy，由它檢查格式。
   `main.rs` 對 `mod scrcpy` 加了 `#[cfg_attr(not(test), expect(dead_code))]` 與 TODO，F7 接上後要移除（否則 expect 不成立會報 warning）。
   F5 尚無使用者看得到的效果，CHANGELOG 沒有新增項目。
+- F6 已完成：`src/config.rs`（`path`、`load`、`Overrides`、`show`）與 `dex2pc config [--path] [覆寫參數]`。
+  設定檔先解析成 `toml::Table` 再逐欄位轉成 `scrcpy::Options`（沒用 serde derive），這樣每個錯誤都能明確寫出欄位名稱；
+  欄位：resolution（字串）、dpi（整數）、video_bit_rate（字串）、audio（bool）、keyboard/mouse（字串）、window_title（字串）。
+  `load` 檔案不存在回 `Ok(None)`，呼叫端用 `unwrap_or_default()`。空字串或相對路徑的 `XDG_CONFIG_HOME` 依 XDG 規範視同未設定。
+  `config::Overrides` 是 clap `Args`，F7 的 `start` 直接 `#[command(flatten)]` 它，再 `overrides.apply(config::load(..)?.unwrap_or_default())`。
+  `--no-audio` 只能關音訊，不能把設定檔的 `audio = false` 打開（沒有 `--audio`）。
+  `InputMode` 多了 `FromStr`/`Display`，設定檔與 CLI 共用同一個錯誤訊息。
+  `expect(dead_code)` 從整個 `mod scrcpy` 縮到 `build_args` 一個函式，F7 接上後移除。
+  clippy.toml 的 doc-valid-idents 加了 `XDG_CONFIG_HOME`（`--help` 文字不能有反引號）。
+  CLI 整合測試只在子行程設定 `XDG_CONFIG_HOME`，不動測試行程的環境變數。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -128,7 +138,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F4 能力判斷 | 完成（2026-10-09） |
 | F11 USB 速度檢查（排在 F4 之後做） | 完成（2026-10-09） |
 | F5 scrcpy 指令組裝 | 完成（2026-10-09） |
-| F6 設定檔 | 未開始 |
+| F6 設定檔 | 完成（2026-10-09） |
 | F7 start | 未開始 |
 | F8 手機端設定 | 未開始 |
 | F9 自動重連 | 未開始 |

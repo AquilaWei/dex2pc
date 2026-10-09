@@ -4,7 +4,7 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本；`start` 等功能還在實作。
+> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定；`start` 等功能還在實作。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
 
 ## 需求
@@ -24,7 +24,26 @@ cargo run -- --help
 cargo run -- --version
 cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連接並授權、USB 速度、是否為 One UI 8 以上
 cargo run -- doctor --serial R5CW1234ABC   # 連了多台手機時指定其中一台
+cargo run -- config     # 顯示設定檔位置與實際生效的設定
+cargo run -- config --path   # 只印設定檔位置
 ```
+
+## 設定檔
+
+位置：**`$XDG_CONFIG_HOME/dex2pc/config.toml`**（沒設 `XDG_CONFIG_HOME` 時是 `~/.config/dex2pc/config.toml`）。
+檔案不存在就用內建預設值；每個欄位都可省略，CLI 參數（例如 `--resolution 3840x2160`）會覆寫設定檔。
+
+```toml
+resolution = "1920x1080"   # 虛擬顯示器解析度
+dpi = 160                  # 數字越大介面越大
+video_bit_rate = "16M"     # 省略時用 scrcpy 預設（8M）；小字模糊時調高
+audio = true               # false 時不轉送手機音訊
+keyboard = "uhid"          # sdk、uhid、aoa、disabled；省略時用 scrcpy 預設
+mouse = "sdk"              # 同上
+window_title = "Samsung DeX"
+```
+
+欄位名稱打錯或型別不對時，dex2pc 會指出檔案路徑與欄位並結束，不會默默忽略。
 
 開發時的檢查指令：
 
