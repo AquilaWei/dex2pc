@@ -135,6 +135,8 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   斷線判斷依 scrcpy man page 的 Exit status（已查證）：0 正常結束、1 初次連線失敗、**2 連線中途斷開**；只有 2 會重連。
   重連流程：`adb -s <serial> wait-for-device`（阻塞到手機回來）→ 等 `retry_delay` → 用同一組參數重新啟動 scrcpy，不重跑整個 doctor。
   「連續失敗」= 斷線後重新啟動失敗（scrcpy 非 0/2、無法執行，或 wait-for-device 失敗）；scrcpy 再次回 2 代表有連上過，計數歸零。
+  審查後修正：每次失敗（含 wait-for-device 失敗，它會立刻返回）後也先等 `retry_delay` 再試，避免暫時性 adb 故障瞬間耗盡 5 次；
+  第 5 次失敗直接放棄不再等。等待函式以參數注入 `keep_reconnecting`，回歸測試記錄等待時間而不真的等。
   第一次啟動就失敗不重試（多半是設定/環境問題）。被訊號中止（scrcpy 或 adb 的 code 為 None）視為 Ctrl+C，直接結束、回 1。
   Ctrl+C 沒有攔：SIGINT 同時送到 dex2pc、scrcpy、adb，dex2pc 依預設行為結束；目前沒有要還原的狀態，所以不需要 `ctrlc`（F8 若要還原設定再加）。
   缺點：同一手機若「連上後立刻斷線」不斷重複，計數一直歸零，會一直重試（每次間隔 `retry_delay`），使用者需 Ctrl+C。

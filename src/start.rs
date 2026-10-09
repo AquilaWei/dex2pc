@@ -82,18 +82,28 @@ pub fn run(
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let outcome = launch(runner, &arg_refs, out)?;
     match watch {
-        Some(watch) => keep_reconnecting(runner, &arg_refs, &selected, watch, outcome, out),
+        Some(watch) => keep_reconnecting(
+            runner,
+            &arg_refs,
+            &selected,
+            watch,
+            outcome,
+            &mut thread::sleep,
+            out,
+        ),
         None => Ok(outcome.exit_code()),
     }
 }
 
 /// watch 模式的主迴圈：從第一次啟動的結果開始，斷線就等裝置回來再重新啟動。
+/// `sleep` 只為了讓測試記錄等待時間而不真的等，正式執行傳 `thread::sleep`。
 fn keep_reconnecting(
     runner: &dyn CommandRunner,
     args: &[&str],
     serial: &str,
     watch: &Watch,
     first: Outcome,
+    sleep: &mut dyn FnMut(Duration),
     out: &mut dyn Write,
 ) -> io::Result<u8> {
     if !matches!(first, Outcome::Disconnected) {
@@ -120,9 +130,11 @@ fn keep_reconnecting(
                     "重新啟動失敗（第 {failures}/{} 次），稍後再試",
                     watch.max_failures
                 )?;
+                // adb wait-for-device 失敗時會立刻返回，不等一下的話暫時性故障會瞬間耗盡重試次數
+                sleep(watch.retry_delay);
             }
         }
-        outcome = reconnect(runner, args, serial, watch.retry_delay, out)?;
+        outcome = reconnect(runner, args, serial, watch.retry_delay, sleep, out)?;
     }
 }
 
@@ -132,6 +144,7 @@ fn reconnect(
     args: &[&str],
     serial: &str,
     delay: Duration,
+    sleep: &mut dyn FnMut(Duration),
     out: &mut dyn Write,
 ) -> io::Result<Outcome> {
     match runner.run("adb", &["-s", serial, "wait-for-device"]) {
@@ -147,7 +160,7 @@ fn reconnect(
             return Ok(Outcome::Failed(FAILURE));
         }
     }
-    thread::sleep(delay);
+    sleep(delay);
     writeln!(out, "裝置已重新連接，重新啟動 scrcpy")?;
     launch(runner, args, out)
 }
@@ -584,6 +597,29 @@ mod tests {
             runner.session_calls(),
             vec![LAUNCH, WAIT, WAIT, WAIT, WAIT, WAIT]
         );
+    }
+
+    #[test]
+    fn watch_waits_retry_delay_after_each_failed_wait_for_device_before_giving_up() {
+        let runner = WatchRunner::new(&[], &[Some(1), Some(1), Some(1), Some(1), Some(1)]);
+        let policy = Watch {
+            max_failures: 5,
+            retry_delay: Duration::from_secs(2),
+        };
+        let mut sleeps = Vec::new();
+
+        keep_reconnecting(
+            &runner,
+            &[],
+            "R5CW1234ABC",
+            &policy,
+            Outcome::Disconnected,
+            &mut |delay| sleeps.push(delay),
+            &mut Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(sleeps, vec![Duration::from_secs(2); 4]);
     }
 
     #[test]
