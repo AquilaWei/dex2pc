@@ -119,6 +119,16 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   exit code：scrcpy 0 → 0；非 0 → 相同 code 並印「scrcpy 以 exit code N 結束：」與 stderr（stderr 空時改印 stdout）；
   被訊號中止或無法執行 → 1；環境檢查不通過 → 1 且不啟動。Ctrl+C 時 SIGINT 同時送到 dex2pc 與 scrcpy，沒有特別處理（F8 要還原設定時才需要攔）。
   `scrcpy::build_args` 上的 `expect(dead_code)` 已移除。
+- F8 調查（2026-10-09，**未在實機確認，`passes` 維持 false**）：查了 Android Authority、PhoneArena、
+  uzair.is-a.dev（One UI 8 DeX 教學）、dev.to（Mac 上跑 DeX）等社群教學，**沒有任何一篇用到 `adb shell settings put`**；
+  都只開 USB 偵錯後執行 `scrcpy --new-display=…`。網路上找不到 `force_desktop_mode_on_external_displays`、
+  `enable_freeform_support` 對 One UI 8 DeX 有作用的來源。因此照 F8 步驟 1 的分支，暫定「不需要」，只在 README 記錄結論，
+  **沒有寫套用/還原設定的程式**（不為推測中的需求寫程式）。README 請使用者在 DeX 沒出現時回報 `settings list global` 的相關項目。
+  uzair 的教學另外用 `adb shell wm set-minimum-width 411` 修手機本身螢幕模糊；它不影響 DeX 視窗、沒寫怎麼還原，
+  所以不放進 README、也不自動執行。
+  **F8 要標 true 需要使用者在實機上確認**：`dex2pc start` 是否直接出現 DeX。若出現 → 標 true，結束 F8；
+  若沒出現 → 依使用者回報的設定實作步驟 2–5（套用前讀原值、null 還原用 `settings delete`、`--keep-settings`、攔 Ctrl+C）。
+  使用者還沒回報前，下一個 session 不要重做 F8 的調查，直接做 F9（F9 不依賴 F8）。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -150,6 +160,6 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F5 scrcpy 指令組裝 | 完成（2026-10-09） |
 | F6 設定檔 | 完成（2026-10-09；審查後補 `--audio` 雙向覆寫，與 `--no-audio` 同時給時最後一個為準） |
 | F7 start | 完成（2026-10-09；實機未驗收） |
-| F8 手機端設定 | 未開始 |
+| F8 手機端設定 | 已調查，README 記錄「暫定不需要」；**等實機確認**（2026-10-09） |
 | F9 自動重連 | 未開始 |
 | F10 桌面整合與交付 | 未開始 |

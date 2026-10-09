@@ -37,6 +37,14 @@ cargo run -- start --dry-run               # 只印出會執行的 scrcpy 指令
 cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
 ```
 
+### 手機端需要另外設定嗎？
+
+**目前的結論：除了開啟 USB 偵錯，不需要改任何 `adb settings`，dex2pc 也不會改手機設定。**
+One UI 8 的 DeX 建在 Android 原生 Desktop Mode 上，scrcpy 用 `--new-display` 建立虛擬顯示器時 DeX 就會出現在上面。
+
+> ⚠️ 這是整理社群教學的結論，**還沒在實機上確認**。如果 `dex2pc start` 開出的視窗是空白或只有一般手機畫面、不是 DeX，
+> 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
+
 ## 建置與執行
 
 ```bash
