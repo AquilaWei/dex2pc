@@ -87,6 +87,12 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   印「型號：…（Android SDK …，One UI …）」與「判定：…」。製造商看 `ro.product.manufacturer`（不分大小寫）。
   Samsung 但讀不到/解析不了 oneui 也判定不支援。F7 `start` 直接重用 `capability::check`。
   getprop 輸出格式 `[key]: [value]` 與屬性名稱憑記憶寫，未在實機確認（需要實機驗收）。
+- F11 已完成：`src/usb.rs`（`find_speed`、`MIN_MBPS`）。`doctor::run` 多一個 `sysfs_root` 參數（main 傳 `/sys`），
+  選到裝置後、讀 getprop 之前印「連線：USB N Mbps」；低於 480 多印一行警告。USB 速度只是診斷，不影響 doctor 結果。
+  速度以 f64 解析，因為低速裝置的 sysfs speed 是 `1.5`。找不到序號或沒有 `bus/usb/devices` 目錄印「無法判斷 USB 速度」；
+  列目錄權限錯誤或 speed 不是數字時印「無法判斷 USB 速度（原因）」，同樣不視為錯誤。
+  doctor 測試的預設假 sysfs 是空暫存目錄，所以既有的完整輸出測試多了「連線：無法判斷 USB 速度」一行。
+  sysfs 的 serial 是否等於 adb 序號仍待實機確認（本機 sysfs 結構已確認有 `<bus>-<port>/serial`）。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -114,7 +120,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F2 doctor | 完成（2026-10-09） |
 | F3 裝置偵測 | 完成（2026-10-09） |
 | F4 能力判斷 | 完成（2026-10-09） |
-| F11 USB 速度檢查（排在 F4 之後做） | 未開始 |
+| F11 USB 速度檢查（排在 F4 之後做） | 完成（2026-10-09） |
 | F5 scrcpy 指令組裝 | 未開始 |
 | F6 設定檔 | 未開始 |
 | F7 start | 未開始 |

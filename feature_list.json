@@ -62,7 +62,7 @@
         "sysfs 找不到對應序號（例如無線 adb）時顯示「無法判斷 USB 速度」，不視為錯誤",
         "測試以暫存目錄建立假的 sysfs 目錄結構，sysfs 根目錄可注入"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F5",

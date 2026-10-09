@@ -4,7 +4,7 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線與 One UI 版本；`start` 等功能還在實作。
+> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本；`start` 等功能還在實作。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
 
 ## 需求
@@ -22,7 +22,7 @@
 cargo build --release
 cargo run -- --help
 cargo run -- --version
-cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連接並授權、是否為 One UI 8 以上
+cargo run -- doctor     # 檢查 adb、scrcpy 是否就緒，手機是否已連接並授權、USB 速度、是否為 One UI 8 以上
 cargo run -- doctor --serial R5CW1234ABC   # 連了多台手機時指定其中一台
 ```
 
@@ -38,6 +38,7 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
   電腦的 USB-C 孔同樣只會**輸出**影像，沒有接收端，兩個來源對接不會有畫面。
 - 所以畫面改走 USB 的**資料通道**：手機把畫面壓成 H.264/H.265 影片串流，經 ADB 傳到電腦解碼成視窗，
   鍵鼠事件再經同一條線傳回手機。壓縮後只需約 8–20 Mbps，USB 2.0 就足夠。
+  `doctor` 會顯示手機實際協商到的 USB 速度，低於 480 Mbps（USB 2.0）時警告可能是線材或 hub 的問題。
 
 ### scrcpy 是什麼？
 

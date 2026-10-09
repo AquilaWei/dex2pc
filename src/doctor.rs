@@ -1,9 +1,11 @@
 use std::fmt;
 use std::io::{self, ErrorKind, Write};
+use std::path::Path;
 
 use crate::capability::{self, DeviceInfo};
 use crate::device;
 use crate::runner::CommandRunner;
+use crate::usb;
 
 pub const ADB_INSTALL_HINT: &str = "sudo dnf install android-tools";
 // scrcpy 官方 doc/linux.md 列的 Fedora 來源是 COPR zeno/scrcpy（2026-10 查證）
@@ -50,14 +52,16 @@ pub fn parse_adb_version(output: &str) -> Option<&str> {
 /// 檢查電腦端的 adb 與 scrcpy，以及連接的手機，把結果寫到 `out`。
 ///
 /// 工具兩項都會檢查完才結束，讓使用者一次看到所有問題；adb 可用時再選裝置
-/// （`serial` 為 `None` 時自動選唯一一台可用的），選到後讀取型號與 One UI 版本，
-/// 判定能否以 DeX 虛擬顯示模式使用。回傳 `Ok(true)` 表示全部就緒。
+/// （`serial` 為 `None` 時自動選唯一一台可用的），選到後從 `sysfs_root`（平常是 `/sys`）
+/// 讀 USB 速度，再讀取型號與 One UI 版本，判定能否以 DeX 虛擬顯示模式使用。
+/// 回傳 `Ok(true)` 表示全部就緒；USB 速度只是診斷資訊，慢或讀不到都只警告，不影響結果。
 ///
 /// # Errors
 /// 只有寫入 `out` 失敗時回傳錯誤；工具缺少、版本不符、選不到裝置或裝置不支援是回傳 `Ok(false)`。
 pub fn run(
     runner: &dyn CommandRunner,
     serial: Option<&str>,
+    sysfs_root: &Path,
     out: &mut dyn Write,
 ) -> io::Result<bool> {
     let adb_ok = check_adb(runner, out)?;
@@ -65,7 +69,10 @@ pub fn run(
     // adb 不能用就列不出裝置，前面已經報過錯，不重複
     let device_ok = if adb_ok {
         match check_device(runner, serial, out)? {
-            Some(selected) => check_capability(runner, &selected, out)?,
+            Some(selected) => {
+                report_usb_speed(sysfs_root, &selected, out)?;
+                check_capability(runner, &selected, out)?
+            }
             None => false,
         }
     } else {
@@ -100,6 +107,20 @@ fn check_device(
             writeln!(out, "{err}")?;
             Ok(None)
         }
+    }
+}
+
+/// 印出 `serial` 那台實際協商到的 USB 速度，低於 USB 2.0 時警告線材或 hub 可能有問題。
+fn report_usb_speed(sysfs_root: &Path, serial: &str, out: &mut dyn Write) -> io::Result<()> {
+    match usb::find_speed(sysfs_root, serial) {
+        Ok(Some(mbps)) if mbps < usb::MIN_MBPS => writeln!(
+            out,
+            "連線：USB {mbps} Mbps\n警告：低於 USB 2.0（480 Mbps），可能是線材或 hub 的問題；請換支援資料傳輸的 USB-C 線，或直接接電腦主機板上的 USB 孔"
+        ),
+        Ok(Some(mbps)) => writeln!(out, "連線：USB {mbps} Mbps"),
+        // 無線 adb 或 sysfs 序號和 adb 不同時會走到這裡，不影響使用
+        Ok(None) => writeln!(out, "連線：無法判斷 USB 速度"),
+        Err(err) => writeln!(out, "連線：無法判斷 USB 速度（{err}）"),
     }
 }
 
@@ -206,6 +227,8 @@ fn check_scrcpy(runner: &dyn CommandRunner, out: &mut dyn Write) -> io::Result<b
 mod tests {
     use std::cell::RefCell;
 
+    use tempfile::TempDir;
+
     use super::*;
     use crate::runner::CommandOutput;
 
@@ -217,6 +240,7 @@ mod tests {
     const S23_ONE_UI_80: &str = "[ro.build.version.oneui]: [80000]\n[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S918B]\n";
     const S23_ONE_UI_71: &str = "[ro.build.version.oneui]: [70100]\n[ro.build.version.sdk]: [35]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S918B]\n";
     const PIXEL: &str = "[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [Google]\n[ro.product.model]: [Pixel 9]\n";
+    const WIRELESS_DEVICE: &str = "List of devices attached\n192.168.1.5:5555       device product:dm3qxxx model:SM_S918B device:dm3q transport_id:3\n\n";
     const NO_DEVICE: &str = "List of devices attached\n\n";
     const TWO_DEVICES: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\nRFCX9876XYZ            device usb:3-4 product:gts9xxx model:SM_X710 device:gts9 transport_id:2\n\n";
 
@@ -299,10 +323,30 @@ mod tests {
         doctor_with_serial(runner, None)
     }
 
+    /// 假 sysfs 是空的暫存目錄，所以 USB 速度一律「無法判斷」。
     fn doctor_with_serial(runner: &FakeRunner, serial: Option<&str>) -> (bool, String) {
+        let sysfs = TempDir::new().unwrap();
+        doctor_with_sysfs(runner, serial, sysfs.path())
+    }
+
+    fn doctor_with_sysfs(
+        runner: &FakeRunner,
+        serial: Option<&str>,
+        sysfs_root: &Path,
+    ) -> (bool, String) {
         let mut out = Vec::new();
-        let ok = run(runner, serial, &mut out).unwrap();
+        let ok = run(runner, serial, sysfs_root, &mut out).unwrap();
         (ok, String::from_utf8(out).unwrap())
+    }
+
+    /// 建一個假 sysfs，內含序號 `R5CW1234ABC`（`ONE_DEVICE` 那台）、速度為 `speed` 的 USB 裝置。
+    fn sysfs_with_speed(speed: &str) -> TempDir {
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join("bus/usb/devices/3-2");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("serial"), "R5CW1234ABC\n").unwrap();
+        std::fs::write(dir.join("speed"), speed).unwrap();
+        root
     }
 
     #[test]
@@ -375,8 +419,73 @@ mod tests {
         assert!(ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
+    }
+
+    #[test]
+    fn doctor_with_usb_5000_shows_speed_without_warning() {
+        let sysfs = sysfs_with_speed("5000\n");
+
+        let (ok, out) = doctor_with_sysfs(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT)),
+            None,
+            sysfs.path(),
+        );
+
+        assert!(ok);
+        assert_eq!(
+            out,
+            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n連線：USB 5000 Mbps\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+        );
+    }
+
+    #[test]
+    fn doctor_with_usb_480_shows_speed_without_warning() {
+        let sysfs = sysfs_with_speed("480\n");
+
+        let (ok, out) = doctor_with_sysfs(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT)),
+            None,
+            sysfs.path(),
+        );
+
+        assert!(ok);
+        assert_eq!(
+            out,
+            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n連線：USB 480 Mbps\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+        );
+    }
+
+    #[test]
+    fn doctor_with_usb_12_warns_about_cable_but_still_succeeds() {
+        let sysfs = sysfs_with_speed("12\n");
+
+        let (ok, out) = doctor_with_sysfs(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT)),
+            None,
+            sysfs.path(),
+        );
+
+        assert!(ok);
+        assert!(out.contains(
+            "連線：USB 12 Mbps\n警告：低於 USB 2.0（480 Mbps），可能是線材或 hub 的問題；請換支援資料傳輸的 USB-C 線，或直接接電腦主機板上的 USB 孔\n"
+        ));
+    }
+
+    #[test]
+    fn doctor_with_serial_missing_from_sysfs_reports_unknown_speed_and_succeeds() {
+        let sysfs = sysfs_with_speed("5000\n");
+
+        let (ok, out) = doctor_with_sysfs(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_devices(Reply::Ok(WIRELESS_DEVICE)),
+            None,
+            sysfs.path(),
+        );
+
+        assert!(ok);
+        assert!(out.contains("裝置：192.168.1.5:5555（SM_S918B）\n連線：無法判斷 USB 速度\n"));
     }
 
     #[test]
@@ -515,7 +624,7 @@ mod tests {
         assert!(ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
@@ -586,7 +695,7 @@ mod tests {
         assert!(!ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
@@ -608,7 +717,7 @@ mod tests {
         assert!(!ok);
         assert_eq!(
             out,
-            "adb：1.0.41\n無法執行 scrcpy：permission denied\n裝置：R5CW1234ABC（SM_S918B）\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+            "adb：1.0.41\n無法執行 scrcpy：permission denied\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 

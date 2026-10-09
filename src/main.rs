@@ -2,8 +2,10 @@ mod capability;
 mod device;
 mod doctor;
 mod runner;
+mod usb;
 
 use std::io;
+use std::path::Path;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -33,7 +35,12 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
         Command::Doctor { serial } => {
-            match doctor::run(&SystemRunner, serial.as_deref(), &mut io::stdout()) {
+            match doctor::run(
+                &SystemRunner,
+                serial.as_deref(),
+                Path::new("/sys"),
+                &mut io::stdout(),
+            ) {
                 Ok(true) => ExitCode::SUCCESS,
                 Ok(false) => ExitCode::FAILURE,
                 Err(err) => {
