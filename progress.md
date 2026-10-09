@@ -126,6 +126,8 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   **沒有寫套用/還原設定的程式**（不為推測中的需求寫程式）。README 請使用者在 DeX 沒出現時回報 `settings list global` 的相關項目。
   uzair 的教學另外用 `adb shell wm set-minimum-width 411` 修手機本身螢幕模糊；它不影響 DeX 視窗、沒寫怎麼還原，
   所以不放進 README、也不自動執行。
+  README 依審查意見寫成**待實機確認的假設**，不寫成確定行為：scrcpy 官方 `doc/virtual-display.md` 只保證建立虛擬顯示器，
+  且說明沒有 launcher 的裝置畫面會是空白，沒有保證會啟動 DeX。
   **F8 要標 true 需要使用者在實機上確認**：`dex2pc start` 是否直接出現 DeX。若出現 → 標 true，結束 F8；
   若沒出現 → 依使用者回報的設定實作步驟 2–5（套用前讀原值、null 還原用 `settings delete`、`--keep-settings`、攔 Ctrl+C）。
   使用者還沒回報前，下一個 session 不要重做 F8 的調查，直接做 F9（F9 不依賴 F8）。

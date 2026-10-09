@@ -29,7 +29,7 @@ cargo run --release -- start
 
 （已用 `cargo install --path .` 安裝時直接執行 **`dex2pc start`**。）
 
-`start` 會先做和 `doctor` 一樣的檢查，全部通過才開啟 **Samsung DeX** 視窗；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
+`start` 會先做和 `doctor` 一樣的檢查，全部通過才以虛擬顯示器開啟 **Samsung DeX** 視窗（DeX 是否直接出現仍待實機驗證）；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
 有問題時照畫面上的訊息處理，或先跑 `cargo run -- doctor` 看完整檢查結果。
 
 ```bash
@@ -39,10 +39,12 @@ cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫�
 
 ### 手機端需要另外設定嗎？
 
-**目前的結論：除了開啟 USB 偵錯，不需要改任何 `adb settings`，dex2pc 也不會改手機設定。**
-One UI 8 的 DeX 建在 Android 原生 Desktop Mode 上，scrcpy 用 `--new-display` 建立虛擬顯示器時 DeX 就會出現在上面。
+**目前先不套用手機設定**：除了開啟 USB 偵錯，dex2pc 不會改任何 `adb settings`。
+部分社群教學回報 One UI 8 可直接用 scrcpy 的 `--new-display` 開出 DeX，**本專案仍待實機驗證**。
+[scrcpy 官方文件](https://github.com/Genymobile/scrcpy/blob/master/doc/virtual-display.md)只保證會建立虛擬顯示器，
+並說明部分裝置在虛擬顯示器上沒有 launcher 時畫面會是空白，沒有保證會啟動 DeX。
 
-> ⚠️ 這是整理社群教學的結論，**還沒在實機上確認**。如果 `dex2pc start` 開出的視窗是空白或只有一般手機畫面、不是 DeX，
+> ⚠️ 如果 `dex2pc start` 開出的視窗是空白或只有一般手機畫面、不是 DeX，
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
 
 ## 建置與執行
@@ -94,6 +96,6 @@ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 [scrcpy](https://github.com/Genymobile/scrcpy) 是 Genymobile 開發的**開源免費**工具（Apache 2.0）。
 它經 ADB 在手機上暫時跑一個小程式，負責畫面串流、在電腦上開視窗、轉送鍵鼠事件；
-**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器，DeX 就跑在上面。
+**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器，dex2pc 預期 DeX 會跑在上面（待實機驗證，見上方「手機端需要另外設定嗎？」）。
 
 dex2pc **不重寫**這些部分，只負責檢查環境、組好 scrcpy 參數、一鍵啟動。
