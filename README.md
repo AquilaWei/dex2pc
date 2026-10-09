@@ -1,10 +1,11 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.1.0-blue) ![platform](https://img.shields.io/badge/platform-Fedora%20Linux-294172)
+![platform](https://img.shields.io/badge/platform-Fedora%20Linux-294172)
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中（0.1.0）**，`doctor` 可檢查電腦端工具；裝置檢查、`start` 等功能還在實作。
+> 目前狀態：**開發中**，`doctor` 可檢查電腦端工具；裝置檢查、`start` 等功能還在實作。
+> 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
 
 ## 需求
 
