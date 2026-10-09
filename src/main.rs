@@ -2,6 +2,9 @@ mod capability;
 mod device;
 mod doctor;
 mod runner;
+// TODO: F7（`dex2pc start`）接上後移除 - 在那之前只有測試用到
+#[cfg_attr(not(test), expect(dead_code))]
+mod scrcpy;
 mod usb;
 
 use std::io;

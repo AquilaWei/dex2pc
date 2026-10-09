@@ -93,6 +93,12 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   列目錄權限錯誤或 speed 不是數字時印「無法判斷 USB 速度（原因）」，同樣不視為錯誤。
   doctor 測試的預設假 sysfs 是空暫存目錄，所以既有的完整輸出測試多了「連線：無法判斷 USB 速度」一行。
   sysfs 的 serial 是否等於 adb 序號仍待實機確認（本機 sysfs 結構已確認有 `<bus>-<port>/serial`）。
+- F5 已完成：`src/scrcpy.rs`（`Resolution`、`Dpi` 實作 `FromStr`，內部用 `NonZeroU32`；`Options` + `Default`；`build_args`）。
+  不合法的解析度/DPI 在解析時就回傳 `InvalidDisplay`，所以 `build_args` 不會失敗；F6 讀設定檔、clap 解析 `--resolution` 都直接用 `FromStr`。
+  `build_args` 回傳不含 `scrcpy` 程式名稱的參數，順序固定：serial → new-display → window-title → bit-rate → no-audio → keyboard → mouse。
+  鍵鼠模式與位元率是 `Option`，`None` 時不加參數，沿用 scrcpy 預設；位元率字串原樣傳給 scrcpy，由它檢查格式。
+  `main.rs` 對 `mod scrcpy` 加了 `#[cfg_attr(not(test), expect(dead_code))]` 與 TODO，F7 接上後要移除（否則 expect 不成立會報 warning）。
+  F5 尚無使用者看得到的效果，CHANGELOG 沒有新增項目。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -121,7 +127,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F3 裝置偵測 | 完成（2026-10-09） |
 | F4 能力判斷 | 完成（2026-10-09） |
 | F11 USB 速度檢查（排在 F4 之後做） | 完成（2026-10-09） |
-| F5 scrcpy 指令組裝 | 未開始 |
+| F5 scrcpy 指令組裝 | 完成（2026-10-09） |
 | F6 設定檔 | 未開始 |
 | F7 start | 未開始 |
 | F8 手機端設定 | 未開始 |
