@@ -1,0 +1,148 @@
+{
+  "features": [
+    {
+      "id": "F1",
+      "description": "專案骨架：用 uv 管理的 Python 套件 dex2pc（版號只寫在 pyproject.toml），提供 `dex2pc` CLI 入口，設定 pytest 與 ruff，附 README 與 CHANGELOG 初稿",
+      "steps": [
+        "`uv run dex2pc --version` 印出與 pyproject.toml 相同的版號（0.1.0）並以 exit code 0 結束",
+        "`uv run dex2pc --help` 列出子指令區塊（之後的功能會往裡面加）",
+        "pytest 有一個測試驗證 --version 輸出取自套件 metadata 而不是寫死字串",
+        "`uv run ruff check .` 與 `uv run ruff format --check .` 皆無錯誤",
+        "uv.lock 已提交；.gitignore 排除 .venv、dist、build、__pycache__、CLAUDE.md、.claude/",
+        "README 寫明專案目的（透過 USB-C 線把 Samsung DeX 以視窗形式顯示在電腦上，並用電腦鍵鼠操作）、需求、怎麼跑"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F2",
+      "description": "`dex2pc doctor`：檢查電腦端相依工具 adb 與 scrcpy 是否存在、scrcpy 版本是否支援 --new-display（>= 3.0），缺少時給出對應作業系統的安裝指令",
+      "steps": [
+        "解析 `scrcpy --version` 輸出的函式：輸入 'scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>' 得到 (3, 3, 1)",
+        "版本 < 3.0 時 doctor 回報不支援虛擬顯示並以非 0 結束",
+        "PATH 裡找不到 adb 時 doctor 回報缺少 adb，並印出 Fedora 的安裝指令（dnf）",
+        "兩者都正常時 doctor 以 exit code 0 結束並列出偵測到的版本",
+        "所有測試用假的 PATH / 假的 subprocess 結果，不需要真的安裝 adb 或 scrcpy"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F3",
+      "description": "裝置偵測：解析 `adb devices -l`，處理沒有裝置、未授權（unauthorized）、多台裝置的情況，並可用 --serial 指定裝置",
+      "steps": [
+        "沒有裝置時回報「請用 USB-C 線連接手機並開啟 USB 偵錯」並以非 0 結束",
+        "裝置狀態為 unauthorized 時提示在手機上按允許 USB 偵錯",
+        "只有一台 device 狀態的裝置時自動選它",
+        "多台裝置且沒給 --serial 時列出所有序號並要求指定",
+        "--serial 指定不存在的序號時明確報錯",
+        "測試以寫死的 `adb devices -l` 輸出字串餵入解析器"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F4",
+      "description": "裝置能力判斷：讀取手機品牌、型號、Android SDK 與 One UI 版本（ro.build.version.oneui），判斷能否在虛擬顯示器上跑 DeX（Samsung 且 One UI >= 8）",
+      "steps": [
+        "ro.build.version.oneui = '80000' 解析為 One UI 8.0；'70100' 解析為 7.1",
+        "Samsung + One UI 8.0 判定為支援 DeX 虛擬顯示",
+        "Samsung + One UI 7.x 判定為不支援，並說明原因（需 One UI 8 以上）",
+        "非 Samsung 裝置（無 oneui 屬性）判定為不支援 DeX，但可用一般鏡像模式",
+        "`dex2pc doctor` 在有裝置時一併印出型號與判定結果",
+        "測試以假的 getprop 回傳值驅動，不需實機"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F5",
+      "description": "scrcpy 指令組裝：純函式，依設定產生 DeX 模式（--new-display=WxH/DPI）或鏡像模式的 argv，包含視窗標題、位元率、音訊、鍵鼠模式、裝置序號",
+      "steps": [
+        "預設 DeX 模式產生的 argv 含 `--new-display=1920x1080/160` 與 `--window-title=Samsung DeX`",
+        "鏡像模式的 argv 不含 --new-display",
+        "指定 serial 時 argv 含 `--serial=<serial>`",
+        "鍵盤模式設為 uhid 時 argv 含 `--keyboard=uhid`；滑鼠同理",
+        "解析度或 DPI 不合法（0、負數、非數字）時丟出明確錯誤",
+        "每個測試的預期 argv 直接寫死"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F6",
+      "description": "設定檔：讀取 XDG 設定目錄下的 config.toml（解析度、DPI、位元率、音訊、鍵鼠模式、視窗標題），CLI 參數可覆寫設定檔，未設定的值用預設",
+      "steps": [
+        "沒有設定檔時使用內建預設值",
+        "設定檔中的 resolution = '2560x1440' 會反映到組出的 scrcpy argv",
+        "CLI 的 --resolution 覆寫設定檔中的值",
+        "設定檔有未知欄位或型別錯誤時回報檔案路徑與欄位名稱並以非 0 結束",
+        "`dex2pc config --path` 印出設定檔位置",
+        "測試用 tmp_path 與環境變數 XDG_CONFIG_HOME，不碰使用者真正的設定"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F7",
+      "description": "`dex2pc start`：串起 doctor → 選裝置 → 能力判斷 → 組指令 → 啟動 scrcpy；支援 --dry-run 只印指令；不支援 DeX 時退回鏡像模式並警告（或 --no-fallback 直接失敗）",
+      "steps": [
+        "--dry-run 時印出完整 scrcpy 指令且不執行任何 subprocess",
+        "支援 DeX 的裝置會以 DeX 模式啟動（以假的 runner 驗證收到的 argv）",
+        "不支援 DeX 的裝置印出警告並以鏡像模式啟動",
+        "--no-fallback 且不支援 DeX 時以非 0 結束且不啟動 scrcpy",
+        "scrcpy 非 0 結束時，dex2pc 以相同 exit code 結束並印出 scrcpy 的錯誤訊息",
+        "README 新增「快速開始」：接上 USB-C 線、開 USB 偵錯、執行 `dex2pc start`"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F8",
+      "description": "手機端前置設定：若實機驗證發現需要調整 adb settings 才能讓 DeX 出現在虛擬顯示器上（例如 freeform / desktop mode 相關開關），由 dex2pc 在啟動前套用、結束後還原原值",
+      "steps": [
+        "先在實機上確認需要哪些設定，結果寫進 progress.md；若完全不需要，本功能改為只在 README 記錄結論",
+        "套用前先讀取並保存原值，scrcpy 結束（含 Ctrl+C）後還原",
+        "原值為 null（未設定）時還原動作為 `settings delete` 而非寫入 0",
+        "--keep-settings 時不還原",
+        "測試以假的 adb runner 驗證呼叫順序：讀原值 → 寫新值 → 啟動 scrcpy → 還原"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F9",
+      "description": "自動重連：`dex2pc start --watch` 在 USB 線拔除或 scrcpy 斷線後等待裝置重新出現並自動重新啟動，Ctrl+C 乾淨結束",
+      "steps": [
+        "scrcpy 因裝置斷線結束時，watch 模式會呼叫 `adb wait-for-device` 後重新啟動",
+        "使用者主動關閉 scrcpy 視窗（正常結束）時不重連，dex2pc 結束",
+        "連續失敗達上限（預設 5 次）後放棄並以非 0 結束",
+        "重試間隔可注入，測試中設為 0，測試不實際等待"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F10",
+      "description": "桌面整合與交付：`dex2pc install-desktop` 在 Linux 建立 .desktop 啟動捷徑；README 補齊圖文說明與「需要實機驗收」清單；版號進 0.x 測試版並更新 CHANGELOG",
+      "steps": [
+        "install-desktop 在 $XDG_DATA_HOME/applications 產生 dex2pc.desktop，Exec 指向 `dex2pc start`",
+        "重複執行不會產生重複檔案，--uninstall 會刪除它",
+        "測試以 tmp_path 驗證產生的 .desktop 內容",
+        "README 列出實機驗收清單：DeX 視窗出現、滑鼠點擊/捲動、鍵盤輸入（含中文輸入）、剪貼簿、音訊、拔線重連",
+        "CHANGELOG 與 README 版本 badge 與 pyproject.toml 版號一致"
+      ],
+      "passes": false
+    }
+  ],
+  "verify": "uv run ruff check . && uv run ruff format --check . && uv run pytest -q",
+  "questions": [
+    {
+      "question": "你的電腦主要是哪個作業系統？（決定安裝提示與桌面捷徑要支援哪些平台）",
+      "options": ["只要 Linux（Fedora）", "Linux + Windows", "Linux + Windows + macOS"]
+    },
+    {
+      "question": "手機型號與 One UI 版本？虛擬顯示器跑 DeX 需要 One UI 8 以上，舊版只能做一般鏡像",
+      "options": ["One UI 8 以上", "One UI 7 或更舊", "不確定，請在 doctor 裡偵測"]
+    },
+    {
+      "question": "要自己寫一個 scrcpy 包裝工具，還是先直接使用現成的 scrcpy 指令 / 第三方工具（例如 DeXtop Mode）就好？",
+      "options": ["自己寫 dex2pc 包裝工具（照此計畫）", "只要一份設定教學與啟動腳本", "先試現成工具，不夠再開發"]
+    },
+    {
+      "question": "實作語言？",
+      "options": ["Python + uv（建議，最好測試）", "Rust", "Shell 腳本"]
+    }
+  ]
+}
