@@ -108,6 +108,12 @@ window_title = "Samsung DeX"
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
+**進版**：版號只改 `Cargo.toml` 的 `version`，README 的版本 badge **不要手改**，用下面的指令重新產生（忘了跑時 `cargo test` 會失敗並提示）：
+
+```bash
+cargo run --example sync_version_badge
+```
+
 ## 實機驗收清單
 
 以下項目**只能在實機上確認**，自動測試都是用假的 adb / scrcpy 輸出，沒有驗證過。試用後請回報哪些可以、哪些不行：
