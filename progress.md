@@ -66,6 +66,11 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 ## 給下一個 session 的注意事項
 
 - **目前只剩 F8**，它在等使用者用實機回報 DeX 是否直接出現（見下方 F8 調查）。沒有回報前不要重做調查，也沒有其他功能可做。
+- 2026-10-09 session：本機接著一台 Samsung 手機（lsusb `04e8:6864`，USB 偵錯已開），系統 PATH 沒有 adb，
+  但 Android SDK 有 `~/Android/Sdk/platform-tools/adb`；**沒有 scrcpy**。`adb devices -l` 顯示 `unauthorized usb:3-1`，
+  要使用者在手機上按「允許 USB 偵錯」才能讀 getprop 或跑 scrcpy，非互動 session 做不到，所以 F8 仍維持 false。
+  只跑了唯讀指令，結束前已 `adb kill-server`。使用者授權並安裝 scrcpy（`dnf copr enable zeno/scrcpy && dnf install scrcpy`）後，
+  下一個 session 可用 `PATH=~/Android/Sdk/platform-tools:$PATH dex2pc doctor` 先驗 F2–F4、F11，再由使用者看 `dex2pc start` 是否出現 DeX。
 - F1 已完成：`Cargo.toml`（clap 4 derive、clippy pedantic 設為 warn）、`src/main.rs`、`tests/cli.rs`、README、CHANGELOG。
   `doctor` 子指令目前是佔位（印「尚未實作」並以 1 結束），讓 `--help` 有子指令區塊；F2 直接把它換成真的實作。
   `clippy.toml` 把 `DeX` 加進 doc-valid-idents，因為 doc comment 會變成 `--help` 文字，不能加反引號。
@@ -93,7 +98,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   速度以 f64 解析，因為低速裝置的 sysfs speed 是 `1.5`。找不到序號或沒有 `bus/usb/devices` 目錄印「無法判斷 USB 速度」；
   列目錄權限錯誤或 speed 不是數字時印「無法判斷 USB 速度（原因）」，同樣不視為錯誤。
   doctor 測試的預設假 sysfs 是空暫存目錄，所以既有的完整輸出測試多了「連線：無法判斷 USB 速度」一行。
-  sysfs 的 serial 是否等於 adb 序號仍待實機確認（本機 sysfs 結構已確認有 `<bus>-<port>/serial`）。
+  sysfs 的 serial 等於 adb 序號：2026-10-09 實機確認（`/sys/bus/usb/devices/3-1/serial` 與 `adb devices -l` 都是同一個序號，speed 為 480）。
 - F5 已完成：`src/scrcpy.rs`（`Resolution`、`Dpi` 實作 `FromStr`，內部用 `NonZeroU32`；`Options` + `Default`；`build_args`）。
   不合法的解析度/DPI 在解析時就回傳 `InvalidDisplay`，所以 `build_args` 不會失敗；F6 讀設定檔、clap 解析 `--resolution` 都直接用 `FromStr`。
   `build_args` 回傳不含 `scrcpy` 程式名稱的參數，順序固定：serial → new-display → window-title → bit-rate → no-audio → keyboard → mouse。
