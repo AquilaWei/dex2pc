@@ -146,14 +146,20 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   `Exec` 寫 `env::current_exe()` 的**絕對路徑** + ` start`，因為桌面環境的 PATH 常不含 `~/.cargo/bin`；
   代價是用 `cargo run` 建立時會指向 `target/`，README 已說明要在 `cargo install` 之後執行。
   路徑一律加雙引號，依 Desktop Entry 規範跳脫 `"` `` ` `` `$` `\`（string 層再跳脫一次反斜線）與 `%`→`%%`。
+  審查後補上：換行、tab、CR 用 string 層的 `\n` `\t` `\r` 表示（否則換行會把 `.desktop` 切壞）；
+  其他控制字元規範沒有表示法，`entry` 回傳 `ControlCharInPath` 拒絕安裝。已用 `desktop-file-validate` 與 GLib
+  （`GKeyFile` + `g_shell_parse_argv`）確認含換行、tab 的路徑能還原成原本的參數。
   不加 `--watch`：捷徑 `Terminal=false`，`wait-for-device` 等不到手機時會在背景一直等、使用者看不到。
   產生的檔案在本機用 `desktop-file-validate` 驗證通過；`Icon=video-display` 是 freedesktop 標準圖示名稱。
   空字串/相對路徑的 `XDG_DATA_HOME` 和 `XDG_CONFIG_HOME` 一樣視同未設定；clippy.toml 的 doc-valid-idents 加了 `XDG_DATA_HOME`。
-  README 新增「安裝」「實機驗收清單」「頻寬」三節，加回**靜態**版本 badge（沒有 remote，動態 badge 讀不到）。
-  `tests/docs.rs` 檢查 README badge 與 CHANGELOG 都含 `CARGO_PKG_VERSION`，進版漏改時測試失敗（已用改版號確認會失敗）。
+  README 新增「安裝」「實機驗收清單」「頻寬」「運作方式」（Mermaid 連線／操作流程圖，已用 mermaid-cli 確認能渲染）幾節。
+  版本 badge 由 **`cargo run --example sync_version_badge`** 從 `CARGO_PKG_VERSION` 產生，不手改；
+  `tests/docs.rs` 透過 `#[path]` 共用同一份 `sync_badge`，README 不是最新產物時失敗並提示指令（已用改舊 badge 確認會失敗）；
+  CHANGELOG 仍檢查有 `## [<版號>]` 段落。
   版號 0.1.0 → **0.1.1**（功能未實機驗收，照規範出 PATCH 測試版；0.1.0 從沒打過 tag），單獨一個 commit，打了本機 tag `v0.1.1`（未推送，沒有 remote）。
-  推上 GitHub 後可把 badge 改成讀 Cargo.toml 的動態 badge，屆時 `tests/docs.rs` 的 badge 測試要一起改。
-- README 版本 badge：沒有 git remote，動態 badge 讀不到 Cargo.toml，所以 F10 改用靜態 badge，由 `tests/docs.rs` 擋住漏改。
+- README 版本 badge：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以改由 example 產生。
+  **進版流程**：改 `Cargo.toml` → `cargo run --example sync_version_badge` → 更新 CHANGELOG → 測試 → commit → tag。
+  推上 GitHub 後若改用讀 Cargo.toml 的動態 badge，要一起刪掉 example 與 `tests/docs.rs` 的 badge 測試。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
   專案是 Rust，所以加了 `pyproject.toml`（只有 ruff、pytest 兩個 dev 依賴）與 `tests/test_cargo_verify.py`，
   pytest 會執行 `feature_list.json` 的 cargo verify 三個指令。兩個指令都要過；`.venv/` 已排除在 git 外。
