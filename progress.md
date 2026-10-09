@@ -65,6 +65,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 
 ## 給下一個 session 的注意事項
 
+- **目前只剩 F8**，它在等使用者用實機回報 DeX 是否直接出現（見下方 F8 調查）。沒有回報前不要重做調查，也沒有其他功能可做。
 - F1 已完成：`Cargo.toml`（clap 4 derive、clippy pedantic 設為 warn）、`src/main.rs`、`tests/cli.rs`、README、CHANGELOG。
   `doctor` 子指令目前是佔位（印「尚未實作」並以 1 結束），讓 `--help` 有子指令區塊；F2 直接把它換成真的實作。
   `clippy.toml` 把 `DeX` 加進 doc-valid-idents，因為 doc comment 會變成 `--help` 文字，不能加反引號。
@@ -141,8 +142,18 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   Ctrl+C 沒有攔：SIGINT 同時送到 dex2pc、scrcpy、adb，dex2pc 依預設行為結束；目前沒有要還原的狀態，所以不需要 `ctrlc`（F8 若要還原設定再加）。
   缺點：同一手機若「連上後立刻斷線」不斷重複，計數一直歸零，會一直重試（每次間隔 `retry_delay`），使用者需 Ctrl+C。
   `--watch` 搭配 `--dry-run` 時 `--watch` 無作用。實機待驗：拔線後 scrcpy 真的回 2、接回後 `wait-for-device` 能等到、2 秒是否夠手機就緒。
-- README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
-  F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
+- F10 已完成：`src/desktop.rs`（`applications_dir`、`entry`、`install`、`uninstall`）與 `dex2pc install-desktop [--uninstall]`。
+  `Exec` 寫 `env::current_exe()` 的**絕對路徑** + ` start`，因為桌面環境的 PATH 常不含 `~/.cargo/bin`；
+  代價是用 `cargo run` 建立時會指向 `target/`，README 已說明要在 `cargo install` 之後執行。
+  路徑一律加雙引號，依 Desktop Entry 規範跳脫 `"` `` ` `` `$` `\`（string 層再跳脫一次反斜線）與 `%`→`%%`。
+  不加 `--watch`：捷徑 `Terminal=false`，`wait-for-device` 等不到手機時會在背景一直等、使用者看不到。
+  產生的檔案在本機用 `desktop-file-validate` 驗證通過；`Icon=video-display` 是 freedesktop 標準圖示名稱。
+  空字串/相對路徑的 `XDG_DATA_HOME` 和 `XDG_CONFIG_HOME` 一樣視同未設定；clippy.toml 的 doc-valid-idents 加了 `XDG_DATA_HOME`。
+  README 新增「安裝」「實機驗收清單」「頻寬」三節，加回**靜態**版本 badge（沒有 remote，動態 badge 讀不到）。
+  `tests/docs.rs` 檢查 README badge 與 CHANGELOG 都含 `CARGO_PKG_VERSION`，進版漏改時測試失敗（已用改版號確認會失敗）。
+  版號 0.1.0 → **0.1.1**（功能未實機驗收，照規範出 PATCH 測試版；0.1.0 從沒打過 tag），單獨一個 commit，打了本機 tag `v0.1.1`（未推送，沒有 remote）。
+  推上 GitHub 後可把 badge 改成讀 Cargo.toml 的動態 badge，屆時 `tests/docs.rs` 的 badge 測試要一起改。
+- README 版本 badge：沒有 git remote，動態 badge 讀不到 Cargo.toml，所以 F10 改用靜態 badge，由 `tests/docs.rs` 擋住漏改。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
   專案是 Rust，所以加了 `pyproject.toml`（只有 ruff、pytest 兩個 dev 依賴）與 `tests/test_cargo_verify.py`，
   pytest 會執行 `feature_list.json` 的 cargo verify 三個指令。兩個指令都要過；`.venv/` 已排除在 git 外。
@@ -174,4 +185,4 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F7 start | 完成（2026-10-09；實機未驗收） |
 | F8 手機端設定 | 已調查，README 記錄「暫定不需要」；**等實機確認**（2026-10-09） |
 | F9 自動重連 | 完成（2026-10-09；實機未驗收） |
-| F10 桌面整合與交付 | 未開始 |
+| F10 桌面整合與交付 | 完成（2026-10-09；v0.1.1 測試版，實機未驗收） |

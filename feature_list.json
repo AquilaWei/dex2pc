@@ -138,7 +138,7 @@
         "README 有一段「頻寬」說明：壓縮後串流約 8–20 Mbps，USB 2.0 即足夠，瓶頸在手機編碼與延遲而非線材",
         "CHANGELOG 與 README 版本 badge 與 Cargo.toml 版號一致"
       ],
-      "passes": false
+      "passes": true
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
