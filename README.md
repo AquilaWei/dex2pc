@@ -9,6 +9,34 @@
 > 以上功能都**尚未在實機上驗收**，請照下方「[實機驗收清單](#實機驗收清單)」試用並回報。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
+## 運作方式
+
+```mermaid
+flowchart LR
+    subgraph PC["Linux 電腦"]
+        KM["鍵盤 / 滑鼠"]
+        DEX2PC["dex2pc start<br/>檢查環境、組參數"]
+        WIN["scrcpy 視窗<br/>標題「Samsung DeX」"]
+    end
+    subgraph PHONE["Samsung 手機（One UI 8 以上）"]
+        SERVER["scrcpy server<br/>（經 adb 暫時執行）"]
+        VD["虛擬顯示器<br/>DeX 桌面"]
+    end
+    DEX2PC -- "1. adb 檢查手機、One UI、USB 速度" --> PHONE
+    DEX2PC -- "2. 啟動 scrcpy --new-display" --> WIN
+    VD -- "3. 畫面" --> SERVER
+    SERVER -- "4. H.264/H.265 影像串流<br/>USB-C 線（ADB 資料通道）" --> WIN
+    KM -- "5. 點擊、捲動、打字" --> WIN
+    WIN -- "6. 鍵鼠事件<br/>同一條 USB-C 線" --> SERVER
+    SERVER -- "7. 注入輸入" --> VD
+```
+
+1. **dex2pc** 經 adb 確認手機已授權、是 One UI 8 以上、USB 速度足夠
+2. 檢查通過後啟動 **scrcpy**，在手機上建立**虛擬顯示器**，DeX 桌面跑在上面
+3. 手機把畫面壓成**影片串流**，經 USB-C 線的資料通道傳回電腦，顯示成一個視窗
+4. 在視窗裡的**鍵盤滑鼠操作**由 scrcpy 送回手機，所以用電腦的鍵鼠就能直接操作 DeX
+5. **關閉視窗**就結束；`--watch` 時拔線後手機接回來會自動重新開啟
+
 ## 需求
 
 - **電腦**：Fedora Linux（只支援 Linux）
