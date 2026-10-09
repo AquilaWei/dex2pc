@@ -7,11 +7,20 @@
 ## 調查結論（2026-10-09）
 
 - **Samsung 官方的「DeX for PC」已停止支援**：One UI 7 起不再支援，Samsung 建議改用 Link to Windows，但那不是桌面模式。
-- **USB-C 線不能把影像「送進」電腦**：電腦的 USB-C 是 DisplayPort 輸出，不是輸入；所以影像一定要靠軟體經 USB 資料通道（ADB）傳過來。
+- **USB-C 線的「資料」是雙向的，但「影像訊號」不能直接送進電腦**：手機接螢幕時用的是 DisplayPort Alt Mode，
+  手機是訊號來源；筆電/桌機的 USB-C 孔也只會當 DisplayPort 來源（輸出），沒有接收端。兩個來源對接不會有畫面。
+  所以做法是：手機把畫面壓成 H.264/H.265 影片串流，經 USB **資料**通道（ADB）傳到電腦解碼成視窗；
+  鍵鼠事件再經同一條線反向傳回手機。這就是 scrcpy 的原理。線必須支援資料傳輸（有些線只能充電）。
 - **可行路線：scrcpy 的虛擬顯示器**：scrcpy 3.0+ 的 `--new-display=WxH/DPI` 會在手機上建立一個虛擬顯示器，並把它開成電腦上的視窗，鍵鼠事件也會傳回手機。
   One UI 8（Android 16 Desktop Mode）起，DeX 改建在 Android 原生 Desktop Mode 上，可以跑在虛擬顯示器上，**不需要 root**。
   One UI 7 以前只能做一般鏡像（或要 HDMI dummy plug 之類的 hack）。
 - 已有第三方包裝工具 DeXtop Mode（PyPI `dextop-mode`）做類似的事；計畫是自己寫一個 `dex2pc`，要不要改用現成工具列在 questions 裡等使用者決定。
+
+## 使用者已確認（2026-10-09）
+
+- 電腦平台：**只要 Linux（Fedora）**。安裝提示只寫 dnf；不做 Windows / macOS。
+- 手機：**One UI 8 以上**。因此移除原本的「不支援時退回鏡像模式」：F4 不符合就報錯，F5 只組 DeX 指令，F7 不支援直接失敗。
+- 尚未回答：要自己寫工具還是用現成工具、實作語言。計畫目前照建議（自己寫、Python + uv），若使用者改選，要重排計畫。
 
 ## 架構
 
@@ -19,7 +28,7 @@ Python 套件 `dex2pc`（uv 管理），本身不處理影像，只負責：
 
 1. `doctor`：檢查 adb / scrcpy（>= 3.0）、裝置、One UI 版本
 2. 組 scrcpy 指令（純函式，好測）
-3. `start`：選裝置 → 判斷能力 → 啟動 scrcpy（DeX 模式或退回鏡像）
+3. `start`：選裝置 → 檢查能力 → 以 DeX 虛擬顯示模式啟動 scrcpy
 4. 選配：手機端 settings 套用與還原、斷線自動重連、Linux 桌面捷徑
 
 所有和 adb / scrcpy 的互動都經過一個可注入的 runner，測試用假的 runner，不需要實機。
@@ -42,7 +51,8 @@ Python 套件 `dex2pc`（uv 管理），本身不處理影像，只負責：
   - DeX 出現在虛擬顯示器上是否還需要額外的 adb settings 或手機上的開關（F8 就是為此保留的；網路上各教學說法不一）。
   - 預設 DPI：教學有用 160 也有用 284，F5 先用 1920x1080/160，等實機回饋再調。
   - 有教學說需要 scrcpy 4.x 以上；F2 先以 3.0 為下限，實機驗證後可能要調高。
-- 使用者回答 questions 後可能要調整：平台範圍（影響 F2 安裝提示、F10 桌面捷徑）、語言、是否改用現成工具。
+  - Fedora 上 scrcpy 的建議安裝來源（COPR 或其他），F2 實作時查證，不要憑記憶寫。
+- 使用者回答剩下的 questions 後可能要調整：語言、是否改用現成工具。
 
 ## 狀態
 
