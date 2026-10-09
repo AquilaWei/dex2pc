@@ -41,6 +41,9 @@ enum Command {
         /// 只印出會執行的 scrcpy 指令，不檢查環境也不執行任何外部指令
         #[arg(long)]
         dry_run: bool,
+        /// USB 線拔除或斷線時等手機重新接上並自動重新啟動；關閉視窗或按 Ctrl+C 結束，斷線後連續 5 次重新啟動失敗就放棄
+        #[arg(long)]
+        watch: bool,
         #[command(flatten)]
         overrides: config::Overrides,
     },
@@ -75,8 +78,9 @@ fn main() -> ExitCode {
         Command::Start {
             serial,
             dry_run,
+            watch,
             overrides,
-        } => match start(serial.as_deref(), dry_run, overrides) {
+        } => match start(serial.as_deref(), dry_run, watch, overrides) {
             Ok(code) => ExitCode::from(code),
             Err(err) => {
                 eprintln!("dex2pc: {err}");
@@ -97,6 +101,7 @@ fn main() -> ExitCode {
 fn start(
     serial: Option<&str>,
     dry_run: bool,
+    watch: bool,
     overrides: config::Overrides,
 ) -> Result<u8, Box<dyn std::error::Error>> {
     let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
@@ -109,6 +114,7 @@ fn start(
         &SystemRunner,
         &options,
         serial,
+        watch.then(start::Watch::default).as_ref(),
         Path::new("/sys"),
         &mut io::stdout(),
     )?)

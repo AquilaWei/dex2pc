@@ -131,6 +131,14 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   **F8 要標 true 需要使用者在實機上確認**：`dex2pc start` 是否直接出現 DeX。若出現 → 標 true，結束 F8；
   若沒出現 → 依使用者回報的設定實作步驟 2–5（套用前讀原值、null 還原用 `settings delete`、`--keep-settings`、攔 Ctrl+C）。
   使用者還沒回報前，下一個 session 不要重做 F8 的調查，直接做 F9（F9 不依賴 F8）。
+- F9 已完成：`start::run` 多一個 `watch: Option<&Watch>`（`max_failures` 預設 5、`retry_delay` 預設 2 秒，測試用 0）。
+  斷線判斷依 scrcpy man page 的 Exit status（已查證）：0 正常結束、1 初次連線失敗、**2 連線中途斷開**；只有 2 會重連。
+  重連流程：`adb -s <serial> wait-for-device`（阻塞到手機回來）→ 等 `retry_delay` → 用同一組參數重新啟動 scrcpy，不重跑整個 doctor。
+  「連續失敗」= 斷線後重新啟動失敗（scrcpy 非 0/2、無法執行，或 wait-for-device 失敗）；scrcpy 再次回 2 代表有連上過，計數歸零。
+  第一次啟動就失敗不重試（多半是設定/環境問題）。被訊號中止（scrcpy 或 adb 的 code 為 None）視為 Ctrl+C，直接結束、回 1。
+  Ctrl+C 沒有攔：SIGINT 同時送到 dex2pc、scrcpy、adb，dex2pc 依預設行為結束；目前沒有要還原的狀態，所以不需要 `ctrlc`（F8 若要還原設定再加）。
+  缺點：同一手機若「連上後立刻斷線」不斷重複，計數一直歸零，會一直重試（每次間隔 `retry_delay`），使用者需 Ctrl+C。
+  `--watch` 搭配 `--dry-run` 時 `--watch` 無作用。實機待驗：拔線後 scrcpy 真的回 2、接回後 `wait-for-device` 能等到、2 秒是否夠手機就緒。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -163,5 +171,5 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F6 設定檔 | 完成（2026-10-09；審查後補 `--audio` 雙向覆寫，與 `--no-audio` 同時給時最後一個為準） |
 | F7 start | 完成（2026-10-09；實機未驗收） |
 | F8 手機端設定 | 已調查，README 記錄「暫定不需要」；**等實機確認**（2026-10-09） |
-| F9 自動重連 | 未開始 |
+| F9 自動重連 | 完成（2026-10-09；實機未驗收） |
 | F10 桌面整合與交付 | 未開始 |

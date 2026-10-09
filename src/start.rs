@@ -1,5 +1,7 @@
 use std::io::{self, Write};
 use std::path::Path;
+use std::thread;
+use std::time::Duration;
 
 use crate::doctor;
 use crate::runner::CommandRunner;
@@ -8,11 +10,58 @@ use crate::scrcpy::{self, Options};
 /// 檢查不通過或 scrcpy 無法啟動、被訊號中止時的 exit code。
 const FAILURE: u8 = 1;
 
+/// scrcpy 在連線建立後裝置才斷開時的 exit code（見 scrcpy man page 的 Exit status）。
+const SCRCPY_DISCONNECTED: i32 = 2;
+
+/// `--watch` 的重連策略。
+pub struct Watch {
+    /// 斷線後連續幾次重新啟動失敗就放棄；成功連上（之後又斷線）會把計數歸零。
+    pub max_failures: u32,
+    /// 每次重新啟動 scrcpy 前等待的時間，讓剛接回的手機有時間就緒；測試設為 0。
+    pub retry_delay: Duration,
+}
+
+impl Default for Watch {
+    fn default() -> Self {
+        Self {
+            max_failures: 5,
+            retry_delay: Duration::from_secs(2),
+        }
+    }
+}
+
+/// 一次執行 scrcpy 的結果。
+enum Outcome {
+    /// 使用者關閉視窗（exit code 0）。
+    Closed,
+    /// 連線中途斷開（exit code 2），watch 模式會重連。
+    Disconnected,
+    /// 其他失敗；內容是 dex2pc 應使用的 exit code。
+    Failed(u8),
+    /// 被訊號中止（例如 Ctrl+C）。
+    Interrupted,
+}
+
+impl Outcome {
+    fn exit_code(&self) -> u8 {
+        match self {
+            Outcome::Closed => 0,
+            Outcome::Disconnected => 2,
+            Outcome::Failed(code) => *code,
+            Outcome::Interrupted => FAILURE,
+        }
+    }
+}
+
 /// 先跑和 `doctor` 相同的檢查，全部就緒才以 DeX 虛擬顯示模式啟動 scrcpy，並等它結束（會阻塞到視窗關閉）。
 ///
 /// 回傳 dex2pc 應該使用的 exit code：scrcpy 正常結束為 0；scrcpy 非 0 結束時沿用它的 code，
 /// 並印出它的錯誤訊息；檢查不通過（缺工具、選不到裝置、不是 One UI 8 以上的 Samsung）時
 /// 回傳 1 且不啟動 scrcpy。
+///
+/// 給了 `watch` 時，scrcpy 因裝置斷線結束（exit code 2）會等裝置重新出現後自動重新啟動，
+/// 直到使用者關閉視窗、按 Ctrl+C，或斷線後連續重新啟動失敗達上限（回傳 1）。
+/// 第一次啟動就失敗不重試，因為那通常是設定或環境問題，重試也不會好。
 ///
 /// # Errors
 /// 只有寫入 `out` 失敗時回傳錯誤。
@@ -20,6 +69,7 @@ pub fn run(
     runner: &dyn CommandRunner,
     options: &Options,
     serial: Option<&str>,
+    watch: Option<&Watch>,
     sysfs_root: &Path,
     out: &mut dyn Write,
 ) -> io::Result<u8> {
@@ -30,16 +80,90 @@ pub fn run(
     let args = scrcpy::build_args(options, Some(&selected));
     writeln!(out, "啟動：{}", command_line(&args))?;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let outcome = launch(runner, &arg_refs, out)?;
+    match watch {
+        Some(watch) => keep_reconnecting(runner, &arg_refs, &selected, watch, outcome, out),
+        None => Ok(outcome.exit_code()),
+    }
+}
+
+/// watch 模式的主迴圈：從第一次啟動的結果開始，斷線就等裝置回來再重新啟動。
+fn keep_reconnecting(
+    runner: &dyn CommandRunner,
+    args: &[&str],
+    serial: &str,
+    watch: &Watch,
+    first: Outcome,
+    out: &mut dyn Write,
+) -> io::Result<u8> {
+    if !matches!(first, Outcome::Disconnected) {
+        return Ok(first.exit_code());
+    }
+    let mut outcome = first;
+    let mut failures = 0;
+    loop {
+        match outcome {
+            Outcome::Closed => return Ok(0),
+            Outcome::Interrupted => return Ok(FAILURE),
+            Outcome::Disconnected => {
+                failures = 0;
+                writeln!(out, "裝置已斷線，等待重新連接（按 Ctrl+C 結束）")?;
+            }
+            Outcome::Failed(_) => {
+                failures += 1;
+                if failures >= watch.max_failures {
+                    writeln!(out, "連續 {failures} 次重新啟動失敗，放棄重連")?;
+                    return Ok(FAILURE);
+                }
+                writeln!(
+                    out,
+                    "重新啟動失敗（第 {failures}/{} 次），稍後再試",
+                    watch.max_failures
+                )?;
+            }
+        }
+        outcome = reconnect(runner, args, serial, watch.retry_delay, out)?;
+    }
+}
+
+/// 等 `serial` 重新出現（`adb wait-for-device` 會阻塞到裝置就緒），等 `delay` 後重新啟動 scrcpy。
+fn reconnect(
+    runner: &dyn CommandRunner,
+    args: &[&str],
+    serial: &str,
+    delay: Duration,
+    out: &mut dyn Write,
+) -> io::Result<Outcome> {
+    match runner.run("adb", &["-s", serial, "wait-for-device"]) {
+        Ok(output) if output.success() => {}
+        // Ctrl+C 也會送到 adb，此時不再重試
+        Ok(output) if output.code.is_none() => return Ok(Outcome::Interrupted),
+        Ok(output) => {
+            writeln!(out, "adb wait-for-device 失敗：{}", output.stderr.trim())?;
+            return Ok(Outcome::Failed(FAILURE));
+        }
+        Err(err) => {
+            writeln!(out, "無法執行 adb：{err}")?;
+            return Ok(Outcome::Failed(FAILURE));
+        }
+    }
+    thread::sleep(delay);
+    writeln!(out, "裝置已重新連接，重新啟動 scrcpy")?;
+    launch(runner, args, out)
+}
+
+/// 執行一次 scrcpy 並等它結束；失敗時印出原因。
+fn launch(runner: &dyn CommandRunner, args: &[&str], out: &mut dyn Write) -> io::Result<Outcome> {
     // scrcpy 的輸出被收集起來，結束後才看得到；失敗時才印，正常關閉視窗時不印
-    let output = match runner.run("scrcpy", &arg_refs) {
+    let output = match runner.run("scrcpy", args) {
         Ok(output) => output,
         Err(err) => {
             writeln!(out, "無法執行 scrcpy：{err}")?;
-            return Ok(FAILURE);
+            return Ok(Outcome::Failed(FAILURE));
         }
     };
     match output.code {
-        Some(0) => Ok(0),
+        Some(0) => Ok(Outcome::Closed),
         Some(code) => {
             let message = if output.stderr.trim().is_empty() {
                 output.stdout.trim()
@@ -47,11 +171,15 @@ pub fn run(
                 output.stderr.trim()
             };
             writeln!(out, "scrcpy 以 exit code {code} 結束：\n{message}")?;
-            Ok(u8::try_from(code).unwrap_or(FAILURE))
+            if code == SCRCPY_DISCONNECTED {
+                Ok(Outcome::Disconnected)
+            } else {
+                Ok(Outcome::Failed(u8::try_from(code).unwrap_or(FAILURE)))
+            }
         }
         None => {
             writeln!(out, "scrcpy 被訊號中止")?;
-            Ok(FAILURE)
+            Ok(Outcome::Interrupted)
         }
     }
 }
@@ -95,6 +223,7 @@ fn shell_quote(arg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::collections::VecDeque;
     use std::io::ErrorKind;
 
     use tempfile::TempDir;
@@ -156,7 +285,7 @@ mod tests {
     fn start(runner: &FakeRunner, options: &Options) -> (u8, String) {
         let sysfs = TempDir::new().unwrap();
         let mut out = Vec::new();
-        let code = run(runner, options, None, sysfs.path(), &mut out).unwrap();
+        let code = run(runner, options, None, None, sysfs.path(), &mut out).unwrap();
         (code, String::from_utf8(out).unwrap())
     }
 
@@ -298,6 +427,7 @@ mod tests {
             &runner,
             &Options::default(),
             Some("R5CW1234ABC"),
+            None,
             sysfs.path(),
             &mut Vec::new(),
         )
@@ -311,6 +441,226 @@ mod tests {
                 .unwrap()
                 .starts_with("scrcpy --serial=R5CW1234ABC ")
         );
+    }
+
+    /// watch 模式用：環境檢查一律通過，scrcpy 與 `adb wait-for-device` 依序回傳 `launches`、`waits`
+    /// 裡的結果（None 代表被訊號中止），用完還被呼叫就 panic。所有呼叫依序記在 `calls`。
+    struct WatchRunner {
+        launches: RefCell<VecDeque<Option<i32>>>,
+        waits: RefCell<VecDeque<Option<i32>>>,
+        calls: RefCell<Vec<String>>,
+    }
+
+    impl WatchRunner {
+        fn new(launches: &[Option<i32>], waits: &[Option<i32>]) -> Self {
+            Self {
+                launches: RefCell::new(launches.iter().copied().collect()),
+                waits: RefCell::new(waits.iter().copied().collect()),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        /// 只留 scrcpy 啟動與 wait-for-device，略過開頭的環境檢查。
+        fn session_calls(&self) -> Vec<String> {
+            self.calls.borrow()[4..].to_vec()
+        }
+    }
+
+    impl CommandRunner for WatchRunner {
+        fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput> {
+            self.calls
+                .borrow_mut()
+                .push(format!("{program} {}", args.join(" ")));
+            match (program, args) {
+                ("adb", ["version"]) => Ok(finished(Some(0), ADB_OUTPUT, "")),
+                ("scrcpy", ["--version"]) => Ok(finished(Some(0), SCRCPY_OUTPUT, "")),
+                ("adb", ["devices", "-l"]) => Ok(finished(Some(0), ONE_DEVICE, "")),
+                ("adb", ["-s", "R5CW1234ABC", "shell", "getprop"]) => {
+                    Ok(finished(Some(0), S23_ONE_UI_80, ""))
+                }
+                ("adb", ["-s", "R5CW1234ABC", "wait-for-device"]) => {
+                    let code = self
+                        .waits
+                        .borrow_mut()
+                        .pop_front()
+                        .expect("unexpected wait");
+                    Ok(finished(code, "", ""))
+                }
+                ("scrcpy", _) => {
+                    let code = self
+                        .launches
+                        .borrow_mut()
+                        .pop_front()
+                        .expect("unexpected launch");
+                    Ok(finished(code, "", "ERROR: device disconnected\n"))
+                }
+                _ => panic!("unexpected command: {program} {args:?}"),
+            }
+        }
+    }
+
+    const LAUNCH: &str =
+        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX";
+    const WAIT: &str = "adb -s R5CW1234ABC wait-for-device";
+
+    fn watch(runner: &WatchRunner) -> (u8, String) {
+        let sysfs = TempDir::new().unwrap();
+        let mut out = Vec::new();
+        let policy = Watch {
+            max_failures: 5,
+            retry_delay: Duration::ZERO,
+        };
+        let code = run(
+            runner,
+            &Options::default(),
+            None,
+            Some(&policy),
+            sysfs.path(),
+            &mut out,
+        )
+        .unwrap();
+        (code, String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn watch_after_disconnect_waits_for_device_then_relaunches() {
+        let runner = WatchRunner::new(&[Some(2), Some(0)], &[Some(0)]);
+
+        watch(&runner);
+
+        assert_eq!(runner.session_calls(), vec![LAUNCH, WAIT, LAUNCH]);
+    }
+
+    #[test]
+    fn watch_after_reconnect_and_window_closed_returns_zero() {
+        let runner = WatchRunner::new(&[Some(2), Some(0)], &[Some(0)]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn watch_when_window_closed_normally_exits_without_reconnecting() {
+        let runner = WatchRunner::new(&[Some(0)], &[]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 0);
+        assert_eq!(runner.session_calls(), vec![LAUNCH]);
+    }
+
+    #[test]
+    fn watch_when_first_launch_fails_does_not_retry() {
+        let runner = WatchRunner::new(&[Some(1)], &[]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 1);
+        assert_eq!(runner.session_calls(), vec![LAUNCH]);
+    }
+
+    #[test]
+    fn watch_gives_up_after_five_consecutive_failed_relaunches() {
+        let runner = WatchRunner::new(
+            &[Some(2), Some(1), Some(1), Some(1), Some(1), Some(1)],
+            &[Some(0), Some(0), Some(0), Some(0), Some(0)],
+        );
+
+        let (code, out) = watch(&runner);
+
+        assert_eq!(code, 1);
+        assert!(out.ends_with("連續 5 次重新啟動失敗，放棄重連\n"));
+    }
+
+    #[test]
+    fn watch_counts_failed_wait_for_device_toward_limit() {
+        let runner = WatchRunner::new(&[Some(2)], &[Some(1), Some(1), Some(1), Some(1), Some(1)]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 1);
+        assert_eq!(
+            runner.session_calls(),
+            vec![LAUNCH, WAIT, WAIT, WAIT, WAIT, WAIT]
+        );
+    }
+
+    #[test]
+    fn watch_resets_failure_count_after_successful_reconnect() {
+        // 4 次失敗後連上又斷線，計數歸零，所以再失敗 4 次仍不放棄，最後正常關閉
+        let runner = WatchRunner::new(
+            &[
+                Some(2),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(2),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(1),
+                Some(0),
+            ],
+            &[Some(0); 10],
+        );
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 0);
+    }
+
+    #[test]
+    fn watch_when_scrcpy_interrupted_stops_without_reconnecting() {
+        let runner = WatchRunner::new(&[Some(2), None], &[Some(0)]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 1);
+        assert_eq!(runner.session_calls(), vec![LAUNCH, WAIT, LAUNCH]);
+    }
+
+    #[test]
+    fn watch_when_wait_for_device_interrupted_stops() {
+        let runner = WatchRunner::new(&[Some(2)], &[None]);
+
+        let (code, _) = watch(&runner);
+
+        assert_eq!(code, 1);
+        assert_eq!(runner.session_calls(), vec![LAUNCH, WAIT]);
+    }
+
+    #[test]
+    fn watch_prints_reconnect_progress() {
+        let runner = WatchRunner::new(&[Some(2), Some(0)], &[Some(0)]);
+
+        let (_, out) = watch(&runner);
+
+        assert!(out.ends_with(
+            "scrcpy 以 exit code 2 結束：\nERROR: device disconnected\n\
+             裝置已斷線，等待重新連接（按 Ctrl+C 結束）\n\
+             裝置已重新連接，重新啟動 scrcpy\n"
+        ));
+    }
+
+    #[test]
+    fn start_without_watch_on_disconnect_returns_two_without_reconnecting() {
+        let runner = WatchRunner::new(&[Some(2)], &[]);
+        let sysfs = TempDir::new().unwrap();
+
+        let code = run(
+            &runner,
+            &Options::default(),
+            None,
+            None,
+            sysfs.path(),
+            &mut Vec::new(),
+        )
+        .unwrap();
+
+        assert_eq!(code, 2);
+        assert_eq!(runner.session_calls(), vec![LAUNCH]);
     }
 
     #[test]

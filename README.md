@@ -35,7 +35,14 @@ cargo run --release -- start
 ```bash
 cargo run -- start --dry-run               # 只印出會執行的 scrcpy 指令，不連手機
 cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
+cargo run -- start --watch                 # 拔線或斷線後，手機接回來自動重新開啟視窗
 ```
+
+**`--watch` 自動重連**：scrcpy 因手機斷線結束時，dex2pc 會等手機重新接上，再自動開啟視窗。
+
+- **關閉視窗**或按 **Ctrl+C** 就結束，不會重連
+- 斷線後**連續 5 次**重新啟動失敗就放棄；重新連上一次就重新計數
+- 第一次啟動就失敗時**不重試**，因為通常是設定或環境問題，重試也不會好
 
 ### 手機端需要另外設定嗎？
 
