@@ -27,3 +27,15 @@ fn help_flag_lists_commands_section() {
             .contains("Commands:")
     );
 }
+
+#[test]
+fn doctor_help_lists_serial_option() {
+    let output = dex2pc().args(["doctor", "--help"]).output().unwrap();
+
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("--serial <SERIAL>")
+    );
+}

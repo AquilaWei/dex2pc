@@ -1,6 +1,7 @@
 use std::fmt;
 use std::io::{self, ErrorKind, Write};
 
+use crate::device;
 use crate::runner::CommandRunner;
 
 pub const ADB_INSTALL_HINT: &str = "sudo dnf install android-tools";
@@ -45,16 +46,51 @@ pub fn parse_adb_version(output: &str) -> Option<&str> {
         .map(str::trim)
 }
 
-/// 檢查電腦端的 adb 與 scrcpy，把結果寫到 `out`。
+/// 檢查電腦端的 adb 與 scrcpy，以及連接的手機，把結果寫到 `out`。
 ///
-/// 兩項都會檢查完才結束，讓使用者一次看到所有問題。回傳 `Ok(true)` 表示全部就緒。
+/// 工具兩項都會檢查完才結束，讓使用者一次看到所有問題；adb 可用時再選裝置
+/// （`serial` 為 `None` 時自動選唯一一台可用的）。回傳 `Ok(true)` 表示全部就緒。
 ///
 /// # Errors
-/// 只有寫入 `out` 失敗時回傳錯誤；工具缺少或版本不符是回傳 `Ok(false)`。
-pub fn run(runner: &dyn CommandRunner, out: &mut dyn Write) -> io::Result<bool> {
+/// 只有寫入 `out` 失敗時回傳錯誤；工具缺少、版本不符或選不到裝置是回傳 `Ok(false)`。
+pub fn run(
+    runner: &dyn CommandRunner,
+    serial: Option<&str>,
+    out: &mut dyn Write,
+) -> io::Result<bool> {
     let adb_ok = check_adb(runner, out)?;
     let scrcpy_ok = check_scrcpy(runner, out)?;
-    Ok(adb_ok && scrcpy_ok)
+    // adb 不能用就列不出裝置，前面已經報過錯，不重複
+    let device_ok = adb_ok && check_device(runner, serial, out)?;
+    Ok(adb_ok && scrcpy_ok && device_ok)
+}
+
+fn check_device(
+    runner: &dyn CommandRunner,
+    serial: Option<&str>,
+    out: &mut dyn Write,
+) -> io::Result<bool> {
+    let output = match runner.run("adb", &["devices", "-l"]) {
+        Ok(output) if output.success() => output,
+        Ok(output) => {
+            writeln!(out, "adb devices 執行失敗：{}", output.stderr.trim())?;
+            return Ok(false);
+        }
+        Err(err) => {
+            writeln!(out, "無法執行 adb devices：{err}")?;
+            return Ok(false);
+        }
+    };
+    match device::select(&device::parse_devices(&output.stdout), serial) {
+        Ok(device) => {
+            writeln!(out, "裝置：{device}")?;
+            Ok(true)
+        }
+        Err(err) => {
+            writeln!(out, "{err}")?;
+            Ok(false)
+        }
+    }
 }
 
 fn check_adb(runner: &dyn CommandRunner, out: &mut dyn Write) -> io::Result<bool> {
@@ -125,6 +161,9 @@ mod tests {
     const SCRCPY_331_OUTPUT: &str = "scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>\n\nDependencies (compiled / linked):\n - SDL: 2.30.0 / 2.30.0\n";
     const SCRCPY_30_OUTPUT: &str = "scrcpy 3.0 <https://github.com/Genymobile/scrcpy>\n";
     const SCRCPY_225_OUTPUT: &str = "scrcpy 2.2.5 <https://github.com/Genymobile/scrcpy>\n";
+    const ONE_DEVICE: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\n\n";
+    const NO_DEVICE: &str = "List of devices attached\n\n";
+    const TWO_DEVICES: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\nRFCX9876XYZ            device usb:3-4 product:gts9xxx model:SM_X710 device:gts9 transport_id:2\n\n";
 
     /// 假 runner 對某個工具的回應。
     #[derive(Clone, Copy)]
@@ -139,20 +178,28 @@ mod tests {
         Denied,
     }
 
-    /// 只回應 `adb version` 與 `scrcpy --version`；參數不對就 panic，讓傳錯參數的實作測試失敗。
+    /// 只回應 `adb version`、`scrcpy --version`、`adb devices -l`；參數不對就 panic，讓傳錯參數的實作測試失敗。
     struct FakeRunner {
         adb: Reply,
         scrcpy: Reply,
+        devices: Reply,
         calls: RefCell<Vec<String>>,
     }
 
     impl FakeRunner {
+        /// `adb devices -l` 預設回傳一台已授權的裝置。
         fn new(adb: Reply, scrcpy: Reply) -> Self {
             Self {
                 adb,
                 scrcpy,
+                devices: Reply::Ok(ONE_DEVICE),
                 calls: RefCell::new(Vec::new()),
             }
+        }
+
+        fn with_devices(mut self, devices: Reply) -> Self {
+            self.devices = devices;
+            self
         }
     }
 
@@ -164,6 +211,7 @@ mod tests {
             let reply = match (program, args) {
                 ("adb", ["version"]) => self.adb,
                 ("scrcpy", ["--version"]) => self.scrcpy,
+                ("adb", ["devices", "-l"]) => self.devices,
                 _ => panic!("unexpected command: {program} {args:?}"),
             };
             match reply {
@@ -184,8 +232,12 @@ mod tests {
     }
 
     fn doctor(runner: &FakeRunner) -> (bool, String) {
+        doctor_with_serial(runner, None)
+    }
+
+    fn doctor_with_serial(runner: &FakeRunner, serial: Option<&str>) -> (bool, String) {
         let mut out = Vec::new();
-        let ok = run(runner, &mut out).unwrap();
+        let ok = run(runner, serial, &mut out).unwrap();
         (ok, String::from_utf8(out).unwrap())
     }
 
@@ -221,8 +273,24 @@ mod tests {
     }
 
     #[test]
-    fn doctor_runs_adb_version_then_scrcpy_version() {
+    fn doctor_runs_adb_version_then_scrcpy_version_then_adb_devices() {
         let runner = FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT));
+
+        doctor(&runner);
+
+        assert_eq!(
+            *runner.calls.borrow(),
+            vec![
+                "adb version".to_string(),
+                "scrcpy --version".to_string(),
+                "adb devices -l".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn doctor_without_adb_does_not_list_devices() {
+        let runner = FakeRunner::new(Reply::Missing, Reply::Ok(SCRCPY_331_OUTPUT));
 
         doctor(&runner);
 
@@ -233,14 +301,75 @@ mod tests {
     }
 
     #[test]
-    fn doctor_with_both_tools_ready_succeeds_and_lists_versions() {
+    fn doctor_with_tools_and_one_device_ready_succeeds_and_lists_them() {
         let (ok, out) = doctor(&FakeRunner::new(
             Reply::Ok(ADB_OUTPUT),
             Reply::Ok(SCRCPY_331_OUTPUT),
         ));
 
         assert!(ok);
-        assert_eq!(out, "adb：1.0.41\nscrcpy：3.3.1\n");
+        assert_eq!(
+            out,
+            "adb：1.0.41\nscrcpy：3.3.1\n裝置：R5CW1234ABC（SM_S918B）\n"
+        );
+    }
+
+    #[test]
+    fn doctor_without_device_fails_and_asks_for_data_cable() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_devices(Reply::Ok(NO_DEVICE)),
+        );
+
+        assert!(!ok);
+        assert!(out.ends_with(
+            "找不到裝置：請用支援資料傳輸的 USB-C 線連接手機並開啟 USB 偵錯（有些 USB-C 線只能充電）\n"
+        ));
+    }
+
+    #[test]
+    fn doctor_with_two_devices_and_no_serial_fails_and_asks_for_serial() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_devices(Reply::Ok(TWO_DEVICES)),
+        );
+
+        assert!(!ok);
+        assert!(out.contains("偵測到多台裝置，請用 --serial 指定其中一台："));
+    }
+
+    #[test]
+    fn doctor_with_serial_picks_that_device() {
+        let (ok, out) = doctor_with_serial(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_devices(Reply::Ok(TWO_DEVICES)),
+            Some("RFCX9876XYZ"),
+        );
+
+        assert!(ok);
+        assert!(out.ends_with("裝置：RFCX9876XYZ（SM_X710）\n"));
+    }
+
+    #[test]
+    fn doctor_with_unknown_serial_fails() {
+        let (ok, out) = doctor_with_serial(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT)),
+            Some("NOPE123"),
+        );
+
+        assert!(!ok);
+        assert!(out.contains("找不到序號 NOPE123 的裝置"));
+    }
+
+    #[test]
+    fn doctor_with_adb_devices_nonzero_exit_fails_and_reports_stderr() {
+        let (ok, out) = doctor(
+            &FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Ok(SCRCPY_331_OUTPUT))
+                .with_devices(Reply::Exit(1, "error: protocol fault\n")),
+        );
+
+        assert!(!ok);
+        assert!(out.ends_with("adb devices 執行失敗：error: protocol fault\n"));
     }
 
     #[test]
@@ -251,7 +380,10 @@ mod tests {
         ));
 
         assert!(ok);
-        assert_eq!(out, "adb：1.0.41\nscrcpy：3.0.0\n");
+        assert_eq!(
+            out,
+            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n"
+        );
     }
 
     #[test]
@@ -321,7 +453,7 @@ mod tests {
         assert!(!ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n"
+            "adb：1.0.41\nscrcpy 執行失敗：ERROR: Could not load SDL\n裝置：R5CW1234ABC（SM_S918B）\n"
         );
     }
 
@@ -341,7 +473,10 @@ mod tests {
         let (ok, out) = doctor(&FakeRunner::new(Reply::Ok(ADB_OUTPUT), Reply::Denied));
 
         assert!(!ok);
-        assert_eq!(out, "adb：1.0.41\n無法執行 scrcpy：permission denied\n");
+        assert_eq!(
+            out,
+            "adb：1.0.41\n無法執行 scrcpy：permission denied\n裝置：R5CW1234ABC（SM_S918B）\n"
+        );
     }
 
     #[test]

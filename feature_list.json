@@ -37,7 +37,7 @@
         "--serial 指定不存在的序號時明確報錯",
         "測試以寫死的 `adb devices -l` 輸出字串餵入解析器"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F4",

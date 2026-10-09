@@ -76,6 +76,12 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   審查後補強：假 runner 只回應確切的 `adb version`、`scrcpy --version`，其他參數直接 panic，並記錄呼叫順序；
   回應可模擬成功、非 0 結束、找不到程式、權限錯誤。測試涵蓋 scrcpy 恰為 3.0 時通過，
   以及任一工具失敗時仍檢查另一個。已用改錯參數、改門檻、提早結束這幾種錯誤實作確認測試會失敗。
+- F3 已完成：`src/device.rs`（`parse_devices` 解析 `adb devices -l`、`select` 依 `--serial` 選裝置，皆為純函式）。
+  `doctor` 多了 `--serial/-s`，在 adb 可用時接著跑 `adb devices -l` 並印出「裝置：序號（型號）」；adb 不能用時不列裝置。
+  選不到裝置的原因是 `SelectError`，`Display` 就是給使用者的訊息，F7 `start` 直接重用 `device::select`。
+  除了 unauthorized，也處理 `no permissions`（Fedora 上 udev 權限不足常見）與 offline 等其他狀態。
+  沒給 serial 時只算 `device` 狀態的裝置：一台 ready + 一台 unauthorized 會自動選 ready 那台。
+  F4 要讀 getprop 時用 `adb -s <serial> shell getprop ...`，接在 `doctor::check_device` 成功之後。
 - README 不寫版號：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以拿掉版本 badge，改寫「用 `dex2pc --version` 查看」。
   F10 要求「README 版本 badge 與 Cargo.toml 一致」：repo 推上 GitHub 後改用讀 Cargo.toml 的動態 badge（`img.shields.io/badge/dynamic/toml`），不要寫死數字。
 - 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
@@ -101,7 +107,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 |------|------|
 | F1 專案骨架 | 完成（2026-10-09） |
 | F2 doctor | 完成（2026-10-09） |
-| F3 裝置偵測 | 未開始 |
+| F3 裝置偵測 | 完成（2026-10-09） |
 | F4 能力判斷 | 未開始 |
 | F11 USB 速度檢查（排在 F4 之後做） | 未開始 |
 | F5 scrcpy 指令組裝 | 未開始 |
