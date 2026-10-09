@@ -2,27 +2,27 @@
   "features": [
     {
       "id": "F1",
-      "description": "專案骨架：用 uv 管理的 Python 套件 dex2pc（版號只寫在 pyproject.toml），提供 `dex2pc` CLI 入口，設定 pytest 與 ruff，附 README 與 CHANGELOG 初稿；目標平台只有 Linux（Fedora）",
+      "description": "專案骨架：Rust binary crate dex2pc（cargo，版號只寫在 Cargo.toml），用 clap 提供 `dex2pc` CLI 入口，設定 rustfmt 與 clippy，附 README 與 CHANGELOG 初稿；目標平台只有 Linux（Fedora）",
       "steps": [
-        "`uv run dex2pc --version` 印出與 pyproject.toml 相同的版號（0.1.0）並以 exit code 0 結束",
-        "`uv run dex2pc --help` 列出子指令區塊（之後的功能會往裡面加）",
-        "pytest 有一個測試驗證 --version 輸出取自套件 metadata 而不是寫死字串",
-        "`uv run ruff check .` 與 `uv run ruff format --check .` 皆無錯誤",
-        "uv.lock 已提交；.gitignore 排除 .venv、dist、build、__pycache__、CLAUDE.md、.claude/",
-        "README 寫明專案目的（透過 USB-C 線把 Samsung DeX 以視窗形式顯示在 Linux 電腦上，並用電腦鍵鼠操作）、需求（Fedora、One UI 8 以上）、怎麼跑，並用一小段說明為什麼畫面是經 USB 資料通道傳送而不是 DisplayPort"
+        "`cargo run -- --version` 印出 `dex2pc 0.1.0` 並以 exit code 0 結束，版號取自 CARGO_PKG_VERSION 而不是寫死字串",
+        "`cargo run -- --help` 列出子指令區塊（之後的功能會往裡面加）",
+        "有一個整合測試以 std::process::Command 執行編出的 binary（CARGO_BIN_EXE_dex2pc），驗證 --version 輸出含 Cargo.toml 的版號",
+        "`cargo fmt --check` 與 `cargo clippy --all-targets -- -D warnings` 皆無錯誤",
+        "Cargo.lock 已提交；.gitignore 排除 target/、CLAUDE.md、.claude/",
+        "README 寫明專案目的（透過 USB-C 線把 Samsung DeX 以視窗形式顯示在 Linux 電腦上，並用電腦鍵鼠操作）、需求（Fedora、One UI 8 以上、adb、scrcpy）、怎麼建置與執行，並用一小段說明 scrcpy 是什麼、為什麼畫面是經 USB 資料通道傳送而不是 DisplayPort"
       ],
       "passes": false
     },
     {
       "id": "F2",
-      "description": "`dex2pc doctor`：檢查電腦端相依工具 adb 與 scrcpy 是否存在、scrcpy 版本是否支援 --new-display（>= 3.0），缺少時給出 Fedora 的安裝指令",
+      "description": "`dex2pc doctor`：檢查電腦端相依工具 adb 與 scrcpy 是否存在、scrcpy 版本是否支援 --new-display（>= 3.0），缺少時給出 Fedora 的安裝指令；所有外部指令都經過可替換的 CommandRunner trait",
       "steps": [
         "解析 `scrcpy --version` 輸出的函式：輸入 'scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>' 得到 (3, 3, 1)",
         "版本 < 3.0 時 doctor 回報不支援虛擬顯示並以非 0 結束",
-        "PATH 裡找不到 adb 時 doctor 回報缺少 adb，並印出 `sudo dnf install android-tools`",
-        "PATH 裡找不到 scrcpy 時 doctor 回報缺少 scrcpy，並印出 Fedora 的安裝方式（實作時查證目前建議的來源，例如 COPR）",
+        "找不到 adb 時 doctor 回報缺少 adb，並印出 `sudo dnf install android-tools`",
+        "找不到 scrcpy 時 doctor 回報缺少 scrcpy，並印出 Fedora 的安裝方式（實作時查證目前建議的來源，例如 COPR）",
         "兩者都正常時 doctor 以 exit code 0 結束並列出偵測到的版本",
-        "所有測試用假的 PATH / 假的 subprocess 結果，不需要真的安裝 adb 或 scrcpy"
+        "所有測試用假的 CommandRunner 回傳寫死的輸出，不需要真的安裝 adb 或 scrcpy"
       ],
       "passes": false
     },
@@ -60,7 +60,7 @@
         "speed = '480' 時顯示 480 Mbps 且無警告（USB 2.0 對壓縮後的串流已足夠）",
         "speed = '12' 時顯示警告，建議換支援資料傳輸的線或直接接主機板上的孔",
         "sysfs 找不到對應序號（例如無線 adb）時顯示「無法判斷 USB 速度」，不視為錯誤",
-        "測試以 tmp_path 建立假的 sysfs 目錄結構，sysfs 根目錄可注入"
+        "測試以暫存目錄建立假的 sysfs 目錄結構，sysfs 根目錄可注入"
       ],
       "passes": false
     },
@@ -73,21 +73,21 @@
         "鍵盤模式設為 uhid 時 argv 含 `--keyboard=uhid`；滑鼠同理",
         "關閉音訊時 argv 含 `--no-audio`",
         "位元率設為 16M 時 argv 含 `--video-bit-rate=16M`；未設定時不加此參數（沿用 scrcpy 預設 8M）",
-        "解析度或 DPI 不合法（0、負數、非數字）時丟出明確錯誤",
+        "解析度或 DPI 不合法（0、負數、非數字）時回傳明確的錯誤",
         "每個測試的預期 argv 直接寫死"
       ],
       "passes": false
     },
     {
       "id": "F6",
-      "description": "設定檔：讀取 $XDG_CONFIG_HOME/dex2pc/config.toml（解析度、DPI、位元率、音訊、鍵鼠模式、視窗標題），CLI 參數可覆寫設定檔，未設定的值用預設",
+      "description": "設定檔：讀取 $XDG_CONFIG_HOME/dex2pc/config.toml（未設 XDG_CONFIG_HOME 時用 ~/.config）；欄位為解析度、DPI、位元率、音訊、鍵鼠模式、視窗標題；CLI 參數可覆寫設定檔，未設定的值用預設",
       "steps": [
         "沒有設定檔時使用內建預設值",
         "設定檔中的 resolution = '2560x1440' 會反映到組出的 scrcpy argv",
         "CLI 的 --resolution 覆寫設定檔中的值",
         "設定檔有未知欄位或型別錯誤時回報檔案路徑與欄位名稱並以非 0 結束",
         "`dex2pc config --path` 印出設定檔位置",
-        "測試用 tmp_path 與環境變數 XDG_CONFIG_HOME，不碰使用者真正的設定"
+        "測試用暫存目錄與注入的設定目錄路徑，不碰使用者真正的設定，也不在測試中改全域環境變數"
       ],
       "passes": false
     },
@@ -95,8 +95,8 @@
       "id": "F7",
       "description": "`dex2pc start`：串起 doctor → 選裝置 → 能力檢查 → 組指令 → 啟動 scrcpy；支援 --dry-run 只印指令；裝置不支援時直接失敗",
       "steps": [
-        "--dry-run 時印出完整 scrcpy 指令且不執行任何 subprocess",
-        "支援的裝置會以 DeX 虛擬顯示模式啟動（以假的 runner 驗證收到的 argv）",
+        "--dry-run 時印出完整 scrcpy 指令且不執行任何外部指令",
+        "支援的裝置會以 DeX 虛擬顯示模式啟動（以假的 CommandRunner 驗證收到的 argv）",
         "裝置不支援（One UI < 8 或非 Samsung）時以非 0 結束且不啟動 scrcpy",
         "scrcpy 非 0 結束時，dex2pc 以相同 exit code 結束並印出 scrcpy 的錯誤訊息",
         "README 新增「快速開始」：接上 USB-C 線、開 USB 偵錯、執行 `dex2pc start`"
@@ -111,7 +111,7 @@
         "套用前先讀取並保存原值，scrcpy 結束（含 Ctrl+C）後還原",
         "原值為 null（未設定）時還原動作為 `settings delete` 而非寫入 0",
         "--keep-settings 時不還原",
-        "測試以假的 adb runner 驗證呼叫順序：讀原值 → 寫新值 → 啟動 scrcpy → 還原"
+        "測試以假的 CommandRunner 驗證呼叫順序：讀原值 → 寫新值 → 啟動 scrcpy → 還原"
       ],
       "passes": false
     },
@@ -130,25 +130,22 @@
       "id": "F10",
       "description": "桌面整合與交付：`dex2pc install-desktop` 在 Linux 建立 .desktop 啟動捷徑；README 補齊圖文說明與「需要實機驗收」清單；版號進 0.x 測試版並更新 CHANGELOG",
       "steps": [
-        "install-desktop 在 $XDG_DATA_HOME/applications 產生 dex2pc.desktop，Exec 指向 `dex2pc start`",
+        "install-desktop 在 $XDG_DATA_HOME/applications（預設 ~/.local/share/applications）產生 dex2pc.desktop，Exec 指向 `dex2pc start`",
         "重複執行不會產生重複檔案，--uninstall 會刪除它",
-        "測試以 tmp_path 驗證產生的 .desktop 內容",
+        "測試以暫存目錄驗證產生的 .desktop 內容",
+        "README 說明用 `cargo install --path .` 安裝到 ~/.cargo/bin",
         "README 列出實機驗收清單：DeX 視窗出現、滑鼠點擊/捲動、鍵盤輸入（含中文輸入）、剪貼簿、音訊、拔線重連、小字清晰度與操作延遲（必要時調高位元率）",
         "README 有一段「頻寬」說明：壓縮後串流約 8–20 Mbps，USB 2.0 即足夠，瓶頸在手機編碼與延遲而非線材",
-        "CHANGELOG 與 README 版本 badge 與 pyproject.toml 版號一致"
+        "CHANGELOG 與 README 版本 badge 與 Cargo.toml 版號一致"
       ],
       "passes": false
     }
   ],
-  "verify": "uv run ruff check . && uv run ruff format --check . && uv run pytest -q",
+  "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
   "questions": [
     {
-      "question": "要自己寫一個 scrcpy 包裝工具，還是先直接使用現成的 scrcpy 指令 / 第三方工具（例如 DeXtop Mode）就好？",
-      "options": ["自己寫 dex2pc 包裝工具（照此計畫）", "只要一份設定教學與啟動腳本", "先試現成工具，不夠再開發"]
-    },
-    {
-      "question": "實作語言？",
-      "options": ["Python + uv（建議，最好測試）", "Rust", "Shell 腳本"]
+      "question": "dex2pc 要「包裝 scrcpy」（呼叫現成的 scrcpy 負責畫面與鍵鼠，dex2pc 負責檢查、設定、一鍵啟動），還是不做程式、只要一份教學與啟動指令？",
+      "options": ["包裝 scrcpy，做成一鍵啟動工具（照此計畫）", "只要教學與一行啟動指令", "先手動試 scrcpy 能不能跑出 DeX，再決定"]
     }
   ]
 }

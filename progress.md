@@ -14,6 +14,9 @@
 - **可行路線：scrcpy 的虛擬顯示器**：scrcpy 3.0+ 的 `--new-display=WxH/DPI` 會在手機上建立一個虛擬顯示器，並把它開成電腦上的視窗，鍵鼠事件也會傳回手機。
   One UI 8（Android 16 Desktop Mode）起，DeX 改建在 Android 原生 Desktop Mode 上，可以跑在虛擬顯示器上，**不需要 root**。
   One UI 7 以前只能做一般鏡像（或要 HDMI dummy plug 之類的 hack）。
+- **scrcpy 是什麼**（使用者問過）：Genymobile 開發的開源免費工具（Apache 2.0），Linux / Windows / macOS 都能用。
+  它經 ADB 在手機上暫時跑一個小程式，把畫面壓成影片串流傳到電腦、在電腦上開視窗顯示，並把電腦的鍵鼠事件送回手機；
+  不需要在手機裝 App、不需要 root。畫面傳輸、解碼、鍵鼠轉送這些最難的部分都由它處理，dex2pc 不重寫。
 - 已有第三方包裝工具 DeXtop Mode（PyPI `dextop-mode`）做類似的事；計畫是自己寫一個 `dex2pc`，要不要改用現成工具列在 questions 裡等使用者決定。
 
 ## 頻寬估算（使用者問「頻寬夠嗎」，2026-10-09）
@@ -36,31 +39,37 @@
 
 - 電腦平台：**只要 Linux（Fedora）**。安裝提示只寫 dnf；不做 Windows / macOS。
 - 手機：**One UI 8 以上**。因此移除原本的「不支援時退回鏡像模式」：F4 不符合就報錯，F5 只組 DeX 指令，F7 不支援直接失敗。
-- 尚未回答：要自己寫工具還是用現成工具、實作語言。計畫目前照建議（自己寫、Python + uv），若使用者改選，要重排計畫。
+- 實作語言：**Rust**。整份計畫已從 Python + uv 改為 cargo；功能範圍不變。
+- 尚未回答：要做包裝工具還是只要教學（使用者回問「scrcpy 是什麼」，已在回覆中解釋並重新提問）。計畫目前照建議（包裝工具），若使用者改選，要重排計畫。
 
 ## 架構
 
-Python 套件 `dex2pc`（uv 管理），本身不處理影像，只負責：
+Rust binary crate `dex2pc`（cargo），本身不處理影像，只負責：
 
 1. `doctor`：檢查 adb / scrcpy（>= 3.0）、裝置、One UI 版本
 2. 組 scrcpy 指令（純函式，好測）
 3. `start`：選裝置 → 檢查能力 → 以 DeX 虛擬顯示模式啟動 scrcpy
 4. 選配：手機端 settings 套用與還原、斷線自動重連、Linux 桌面捷徑
 
-所有和 adb / scrcpy 的互動都經過一個可注入的 runner，測試用假的 runner，不需要實機。
+所有和 adb / scrcpy 的互動都經過一個 `CommandRunner` trait，測試用假的實作回傳寫死的輸出，不需要實機。
+sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不讀寫真實路徑、不改全域環境變數（Rust 測試預設平行執行）。
+
+建議的 crate（實作時可依需要調整，新增依賴要有理由）：`clap`（derive）、`serde` + `toml`（設定檔）、
+`tempfile`（dev-dependency，測試用暫存目錄）、F8/F9 需要攔 Ctrl+C 時再加 `ctrlc`。
 
 ## 檢查指令
 
-`uv run ruff check . && uv run ruff format --check . && uv run pytest -q`
+`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
 
-在 F1 完成前這個指令一定失敗（還沒有 pyproject.toml），所以 F1 必須第一個做。
+在 F1 完成前這個指令一定失敗（還沒有 Cargo.toml），所以 F1 必須第一個做。
 
 ## 給下一個 session 的注意事項
 
-- 目前 repo 是空的，只有 init commit。本機有 `uv`、Python 3.14，**沒有 adb、scrcpy**，
-  所以測試全部要 mock，不能依賴這兩個工具存在。
-- 依使用者規範（coding-standards skill）：commit 英文單行 `<type>: <desc>`；版號只寫在 `pyproject.toml`；
-  功能與測試同一個 commit；CLAUDE.md、`.claude/` 不進 git。
+- 目前 repo 只有計畫文件。本機有 Rust 1.98（cargo、clippy、rustfmt 皆可用），**沒有 adb、scrcpy**，
+  所以測試全部要用假的 CommandRunner，不能依賴這兩個工具存在。
+- 依使用者規範（coding-standards skill）：commit 英文單行 `<type>: <desc>`；版號只寫在 `Cargo.toml`；
+  功能與測試同一個 commit；CLAUDE.md、`.claude/`、`target/` 不進 git；Cargo.lock 要提交（binary crate）。
+- `features` 陣列順序是 F1–F4、F11、F5–F10，照陣列順序做。
 - **實機才驗得出的項目**（不要假裝測過，列給使用者驗收）：DeX 是否真的出現在虛擬顯示器上、
   滑鼠點擊與捲動、鍵盤與中文輸入、剪貼簿、音訊、拔線重連。
 - 不確定的事：
@@ -68,7 +77,7 @@ Python 套件 `dex2pc`（uv 管理），本身不處理影像，只負責：
   - 預設 DPI：教學有用 160 也有用 284，F5 先用 1920x1080/160，等實機回饋再調。
   - 有教學說需要 scrcpy 4.x 以上；F2 先以 3.0 為下限，實機驗證後可能要調高。
   - Fedora 上 scrcpy 的建議安裝來源（COPR 或其他），F2 實作時查證，不要憑記憶寫。
-- 使用者回答剩下的 questions 後可能要調整：語言、是否改用現成工具。
+- 使用者回答剩下的 question 後可能要調整：是否只要教學、不做工具。
 
 ## 狀態
 
