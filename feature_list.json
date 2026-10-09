@@ -53,6 +53,18 @@
       "passes": false
     },
     {
+      "id": "F11",
+      "description": "USB 連線速度檢查：從 Linux sysfs（/sys/bus/usb/devices/*/serial 對應 adb 序號，讀同目錄的 speed）取得手機實際協商到的 USB 速度，`dex2pc doctor` 印出來；低於 USB 2.0（480 Mbps）時警告可能是線材或 hub 問題",
+      "steps": [
+        "假 sysfs 中序號相符的裝置 speed = '5000' 時，doctor 顯示「USB 5000 Mbps」且無警告",
+        "speed = '480' 時顯示 480 Mbps 且無警告（USB 2.0 對壓縮後的串流已足夠）",
+        "speed = '12' 時顯示警告，建議換支援資料傳輸的線或直接接主機板上的孔",
+        "sysfs 找不到對應序號（例如無線 adb）時顯示「無法判斷 USB 速度」，不視為錯誤",
+        "測試以 tmp_path 建立假的 sysfs 目錄結構，sysfs 根目錄可注入"
+      ],
+      "passes": false
+    },
+    {
       "id": "F5",
       "description": "scrcpy 指令組裝：純函式，依設定產生 DeX 用的 argv（--new-display=WxH/DPI），包含視窗標題、位元率、音訊、鍵鼠模式、裝置序號",
       "steps": [
@@ -60,6 +72,7 @@
         "指定 serial 時 argv 含 `--serial=<serial>`",
         "鍵盤模式設為 uhid 時 argv 含 `--keyboard=uhid`；滑鼠同理",
         "關閉音訊時 argv 含 `--no-audio`",
+        "位元率設為 16M 時 argv 含 `--video-bit-rate=16M`；未設定時不加此參數（沿用 scrcpy 預設 8M）",
         "解析度或 DPI 不合法（0、負數、非數字）時丟出明確錯誤",
         "每個測試的預期 argv 直接寫死"
       ],
@@ -120,7 +133,8 @@
         "install-desktop 在 $XDG_DATA_HOME/applications 產生 dex2pc.desktop，Exec 指向 `dex2pc start`",
         "重複執行不會產生重複檔案，--uninstall 會刪除它",
         "測試以 tmp_path 驗證產生的 .desktop 內容",
-        "README 列出實機驗收清單：DeX 視窗出現、滑鼠點擊/捲動、鍵盤輸入（含中文輸入）、剪貼簿、音訊、拔線重連",
+        "README 列出實機驗收清單：DeX 視窗出現、滑鼠點擊/捲動、鍵盤輸入（含中文輸入）、剪貼簿、音訊、拔線重連、小字清晰度與操作延遲（必要時調高位元率）",
+        "README 有一段「頻寬」說明：壓縮後串流約 8–20 Mbps，USB 2.0 即足夠，瓶頸在手機編碼與延遲而非線材",
         "CHANGELOG 與 README 版本 badge 與 pyproject.toml 版號一致"
       ],
       "passes": false
