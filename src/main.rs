@@ -1,5 +1,6 @@
 mod capability;
 mod config;
+mod desktop;
 mod device;
 mod doctor;
 mod runner;
@@ -55,6 +56,12 @@ enum Command {
         #[command(flatten)]
         overrides: config::Overrides,
     },
+    /// 建立應用程式選單捷徑 dex2pc.desktop（放在 XDG_DATA_HOME 下的 applications，未設定時用 ~/.local/share/applications），點它等同執行 dex2pc start
+    InstallDesktop {
+        /// 刪除已建立的捷徑
+        #[arg(long)]
+        uninstall: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -88,6 +95,13 @@ fn main() -> ExitCode {
             }
         },
         Command::Config { path, overrides } => match show_config(path, overrides) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::InstallDesktop { uninstall } => match install_desktop(uninstall) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
                 eprintln!("dex2pc: {err}");
@@ -133,5 +147,23 @@ fn show_config(
     let from_file = loaded.is_some();
     let options = overrides.apply(loaded.unwrap_or_default());
     config::show(&mut io::stdout(), &path, from_file, &options)?;
+    Ok(())
+}
+
+fn install_desktop(uninstall: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let dir = desktop::applications_dir(env::var_os("XDG_DATA_HOME"), env::var_os("HOME"))?;
+    if uninstall {
+        match desktop::uninstall(&dir)? {
+            Some(path) => println!("已刪除 {}", path.display()),
+            None => println!(
+                "沒有捷徑需要刪除（{} 不存在）",
+                dir.join("dex2pc.desktop").display()
+            ),
+        }
+        return Ok(());
+    }
+    // 捷徑寫入目前執行檔的絕對路徑；用 cargo run 執行時會指向 target/ 裡的檔案
+    let path = desktop::install(&dir, &env::current_exe()?)?;
+    println!("已建立 {}", path.display());
     Ok(())
 }

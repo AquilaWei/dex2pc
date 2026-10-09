@@ -186,3 +186,41 @@ fn start_without_adb_or_scrcpy_exits_non_zero() {
             .contains("環境未就緒，未啟動 scrcpy")
     );
 }
+
+#[test]
+fn install_desktop_writes_entry_execing_this_binary_start() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = dex2pc()
+        .arg("install-desktop")
+        .env("XDG_DATA_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let entry = std::fs::read_to_string(dir.path().join("applications/dex2pc.desktop")).unwrap();
+    assert!(entry.contains(&format!(
+        "Exec=\"{}\" start\n",
+        env!("CARGO_BIN_EXE_dex2pc")
+    )));
+}
+
+#[test]
+fn install_desktop_uninstall_removes_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let installed = dex2pc()
+        .arg("install-desktop")
+        .env("XDG_DATA_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(installed.status.success());
+
+    let output = dex2pc()
+        .args(["install-desktop", "--uninstall"])
+        .env("XDG_DATA_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(!dir.path().join("applications/dex2pc.desktop").exists());
+}

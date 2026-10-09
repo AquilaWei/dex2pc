@@ -14,3 +14,4 @@
 - `dex2pc start`：檢查環境後以 DeX 虛擬顯示模式啟動 scrcpy，預期 DeX 會開成電腦上的一個視窗（尚待實機驗證）；手機不支援時直接失敗，不啟動 scrcpy；scrcpy 出錯時印出它的錯誤訊息並沿用它的 exit code
 - `dex2pc start --dry-run`：只印出會執行的 scrcpy 指令（可直接複製到終端機執行）
 - `dex2pc start --watch`：USB 線拔除或斷線後，手機接回來會自動重新開啟 DeX 視窗；關閉視窗或按 Ctrl+C 結束，連續 5 次重新啟動失敗就放棄
+- `dex2pc install-desktop`：在應用程式選單加入「Samsung DeX」捷徑，點它就開啟 DeX 視窗；`--uninstall` 移除

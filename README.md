@@ -4,9 +4,9 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**開發中**，`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連；
-> 手機端設定、桌面捷徑還在實作，以上功能都**尚未在實機上驗收**。
-> 版號只寫在 `Cargo.toml`，用 `dex2pc --version`（或 `cargo run -- --version`）查看。
+> 目前狀態：**測試版**，`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
+> 以上功能都**尚未在實機上驗收**，請照下方「[實機驗收清單](#實機驗收清單)」試用並回報。
+> 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
 ## 需求
 
@@ -16,6 +16,22 @@
 - **scrcpy 3.0 以上**（需要 `--new-display`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
 - 建置需要 Rust（cargo）
+
+## 安裝
+
+```bash
+cargo install --path .     # 編譯並安裝到 ~/.cargo/bin/dex2pc
+dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX」捷徑
+```
+
+`~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。
+
+**應用程式選單捷徑**：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
+
+- 捷徑記錄的是**執行指令當下的 dex2pc 絕對路徑**，所以請在 `cargo install` 之後用 `dex2pc install-desktop` 建立，不要用 `cargo run`（會指向 `target/` 裡的檔案）
+- 重複執行只會覆寫同一個檔案；移除用 **`dex2pc install-desktop --uninstall`**
+- 捷徑沒有終端機，**看不到錯誤訊息**；點了沒反應時，在終端機跑 `dex2pc doctor` 看原因
+- 捷徑不加 `--watch`：沒有終端機時，手機一直沒接回來會在背景一直等，使用者看不到也關不掉
 
 ## 快速開始
 
@@ -90,6 +106,35 @@ window_title = "Samsung DeX"
 ```bash
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
+
+## 實機驗收清單
+
+以下項目**只能在實機上確認**，自動測試都是用假的 adb / scrcpy 輸出，沒有驗證過。試用後請回報哪些可以、哪些不行：
+
+- [ ] `dex2pc doctor` 正確列出手機型號、One UI 版本、USB 速度
+- [ ] `dex2pc start` 開出的視窗是 **DeX 桌面**（不是空白、也不是一般手機畫面）
+- [ ] **滑鼠**：點擊、右鍵、拖曳、滾輪捲動
+- [ ] **鍵盤**：英文輸入、快捷鍵、**中文輸入**（用電腦的輸入法打字能否送進手機）
+- [ ] **剪貼簿**：電腦與手機之間複製貼上
+- [ ] **音訊**：手機的聲音從電腦播出；`--no-audio` 時不播
+- [ ] **拔線重連**：`dex2pc start --watch` 時拔掉再接回 USB 線，視窗會自動重新開啟
+- [ ] **小字清晰度與操作延遲**：小字模糊時用 `--video-bit-rate 16M`（或更高）再試，回報是否改善
+- [ ] 應用程式選單的「Samsung DeX」捷徑能開啟視窗
+
+## 頻寬：USB 2.0 就夠嗎？
+
+**夠。** 畫面是壓縮後的影片串流，不是原始畫面：
+
+| 項目 | 需要 / 提供 |
+|------|-------------|
+| 不壓縮 1080p60 | 約 3 Gbps（所以一定要壓縮） |
+| scrcpy 壓縮後影像（H.264/H.265） | 預設 **8 Mbps**，高畫質約 **16–20 Mbps** |
+| 音訊 + 鍵鼠事件 | 不到 0.2 Mbps |
+| USB 2.0 | 480 Mbps |
+
+- 壓縮後的串流只用掉 USB 2.0 的一小部分，**瓶頸不在線材**，而在手機的硬體編碼器（解析度上限、發熱）與編解碼延遲（通常幾十毫秒）
+- 小字模糊是壓縮造成的，**調高位元率**（`--video-bit-rate 16M`）通常就能改善
+- `dex2pc doctor` 會顯示實際協商到的 USB 速度；低於 480 Mbps 才代表線材或 hub 有問題
 
 ## 原理：為什麼不是直接走 DisplayPort？
 
