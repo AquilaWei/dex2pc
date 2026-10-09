@@ -35,11 +35,19 @@ pub fn applications_dir(
 /// 等不到手機時會在背景一直等，使用者看不到也關不掉。
 ///
 /// # Errors
-/// 路徑不是 UTF-8 時回傳 `DesktopError::NonUtf8Path`（`.desktop` 檔規定是 UTF-8）。
+/// 路徑不是 UTF-8 時回傳 `DesktopError::NonUtf8Path`（`.desktop` 檔規定是 UTF-8）；
+/// 含有換行、tab、CR 以外的控制字元時回傳 `DesktopError::ControlCharInPath`
+/// （string 值不能含控制字元，規範也只給這三個跳脫序列）。
 pub fn entry(exe: &Path) -> Result<String, DesktopError> {
     let exe_str = exe
         .to_str()
         .ok_or_else(|| DesktopError::NonUtf8Path(exe.to_path_buf()))?;
+    if exe_str
+        .chars()
+        .any(|ch| ch.is_control() && !matches!(ch, '\n' | '\t' | '\r'))
+    {
+        return Err(DesktopError::ControlCharInPath(exe.to_path_buf()));
+    }
     Ok(format!(
         "[Desktop Entry]\n\
          Type=Application\n\
@@ -55,6 +63,8 @@ pub fn entry(exe: &Path) -> Result<String, DesktopError> {
 
 /// 依 Desktop Entry 規範把一個參數放進 `Exec`：一律加雙引號，引號內的 `"` `` ` `` `$` `\`
 /// 先加反斜線跳脫；`Exec` 本身又是 string 型別，所以反斜線要再跳脫一次。`%` 是欄位代碼，寫成 `%%`。
+/// 換行、tab、CR 不能原樣寫進檔案（換行會切斷這一行），用 string 型別的 `\n` `\t` `\r` 表示；
+/// 讀取端還原後它們落在雙引號內，屬於參數的一部分。其他控制字元由 `entry` 事先拒絕。
 fn quote_exec_arg(arg: &str) -> String {
     let mut quoted = String::from("\"");
     for ch in arg.chars() {
@@ -66,6 +76,9 @@ fn quote_exec_arg(arg: &str) -> String {
                 quoted.push(ch);
             }
             '%' => quoted.push_str("%%"),
+            '\n' => quoted.push_str("\\n"),
+            '\t' => quoted.push_str("\\t"),
+            '\r' => quoted.push_str("\\r"),
             _ => quoted.push(ch),
         }
     }
@@ -103,6 +116,7 @@ pub fn uninstall(dir: &Path) -> Result<Option<PathBuf>, DesktopError> {
 pub enum DesktopError {
     NoDataDir,
     NonUtf8Path(PathBuf),
+    ControlCharInPath(PathBuf),
     Io { path: PathBuf, reason: String },
 }
 
@@ -123,6 +137,12 @@ impl fmt::Display for DesktopError {
                 f,
                 "dex2pc 的路徑 {} 不是 UTF-8，無法寫進捷徑",
                 path.display()
+            ),
+            // 控制字元跳脫成 `\u{1b}` 再印，不直接送到終端機
+            Self::ControlCharInPath(path) => write!(
+                f,
+                "dex2pc 的路徑 {} 含有控制字元，無法寫進捷徑",
+                path.display().to_string().escape_debug()
             ),
             Self::Io { path, reason } => write!(f, "{}：{reason}", path.display()),
         }
@@ -194,6 +214,25 @@ mod tests {
             entry(Path::new("/opt/a\"b`c$d%e\\f/dex2pc"))
                 .unwrap()
                 .contains(r#"Exec="/opt/a\\"b\\`c\\$d%%e\\\\f/dex2pc" start"#)
+        );
+    }
+
+    #[test]
+    fn entry_escapes_newline_tab_and_carriage_return_in_exec() {
+        assert!(
+            entry(Path::new("/opt/a\nb\tc\rd/dex2pc"))
+                .unwrap()
+                .contains(r#"Exec="/opt/a\nb\tc\rd/dex2pc" start"#)
+        );
+    }
+
+    #[test]
+    fn entry_rejects_path_with_other_control_character() {
+        assert_eq!(
+            entry(Path::new("/opt/a\u{1b}b/dex2pc")),
+            Err(DesktopError::ControlCharInPath(PathBuf::from(
+                "/opt/a\u{1b}b/dex2pc"
+            )))
         );
     }
 
