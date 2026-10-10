@@ -60,11 +60,12 @@
     },
     {
       "id": "F4",
-      "description": "GitHub Actions：push/PR 時跑 verify 並建置 rpm 與 deb，推 vX.Y.Z tag 時建置 rpm 與 deb、附 SHA256，發佈到 GitHub Release",
+      "description": "GitHub Actions（Public repo）：每次 push/PR 都跑 verify 並建置 rpm 與 deb（含 PATCH 版）；只有 MINOR 以上的版本（X.Y.0）才有 tag `vX.Y.0` 並自動建置、附 SHA256、發佈到 GitHub Release，PATCH 版不打 tag、不發佈",
       "steps": [
-        ".github/workflows 的 PR 流程跑 fmt、clippy、test、build-rpm、build-deb 與兩種煙霧測試，並上傳 rpm 與 deb artifact",
-        "tag `vX.Y.Z` 與 Cargo.toml 版號不一致時 workflow 失敗",
+        ".github/workflows 的 push 與 PR 流程跑 fmt、clippy、test、build-rpm、build-deb 與兩種煙霧測試，並上傳 rpm 與 deb artifact；版號是 PATCH 版（Z 不為 0）時也照跑",
+        "發佈流程只由符合 `v*.*.0` 的 tag 觸發；tag 與 Cargo.toml 版號不一致時 workflow 失敗；推 `vX.Y.Z`（Z 不為 0）的 tag 時不發佈",
         "release 流程在 CI 綠燈後才建立 Release，附 rpm、deb 與各自的 `.sha256` 檔，release notes 取自 CHANGELOG 對應版本",
+        "workflow 只用內建的 GITHUB_TOKEN，不需要任何另外設定的 secret；使用 Public repo 免費的 GitHub-hosted runner，不依賴 self-hosted runner",
         "workflow 通過 `actionlint`（有裝時）；實際發佈只能在推 tag 後於 GitHub 驗證，列入需要使用者操作的清單"
       ],
       "passes": false
@@ -77,7 +78,8 @@
         "README 說明 rpm 只支援 Fedora（x86_64）；沒有啟用 COPR 時 dnf 會因為找不到 scrcpy 而失敗，要寫明",
         "README 說明從原始碼自建 rpm 的步驟（需要的套件與 build-rpm.sh）與移除方式 `sudo dnf remove dex2pc`",
         "CHANGELOG [Unreleased] 以使用者看得懂的話記錄新增 rpm 安裝包",
-        "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過"
+        "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過",
+        "README 說明 PATCH 版只提供 CI 產出的 artifact，不發佈 Release；正式安裝包取自 MINOR 以上版本的 Release"
       ],
       "passes": false
     },
@@ -105,5 +107,13 @@
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-  "questions": []
+  "questions": [
+    {
+      "question": "確認一下：你說的「CL」是指 CI（每次 push/PR 自動建置 rpm 與 deb 並上傳 artifact）嗎？",
+      "options": [
+        "是，CI 每次建置，但只在 X.Y.0 才 tag 與發佈",
+        "不是，我指的是 CHANGELOG，請說明想要的行為"
+      ]
+    }
+  ]
 }
