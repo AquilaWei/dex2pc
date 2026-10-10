@@ -152,7 +152,7 @@ fn inner_exits_77_when_rpm_install_cannot_download_dependencies_from_copr() {
         ("FAKE_FAIL_STEP", "install"),
         (
             "FAKE_FAIL_MESSAGE",
-            "Failed to download metadata for repo 'copr:copr.fedorainfracloud.org:zeno:scrcpy'",
+            "Failed to download metadata for repo 'copr:copr.fedorainfracloud.org:zeno:scrcpy'\nCurl error (28): Timeout was reached",
         ),
     ]);
 
@@ -313,6 +313,62 @@ fn inner_exits_77_when_copr_connection_times_out() {
         (
             "FAKE_FAIL_MESSAGE",
             "copr.fedorainfracloud.org: Connection timed out after 30001 milliseconds",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}
+
+#[test]
+fn inner_exits_1_when_metadata_download_fails_together_with_http_404() {
+    // 同一份輸出同時有「下載 metadata 失敗」和 HTTP 404：404 是一般失敗，不能被當成網路問題略過
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to download metadata for repo 'copr:copr.fedorainfracloud.org:zeno:scrcpyy'\n\
+             Curl error (22): HTTP response code said error for https://copr.fedorainfracloud.org/coprs/zeno/scrcpyy/repo/fedora-44/ (The requested URL returned error: 404)\n\
+             Status code: 404 for https://copr.fedorainfracloud.org/coprs/zeno/scrcpyy/repo/fedora-44/\n\
+             Error: Failed to download metadata",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_exits_1_when_dns_failure_and_http_404_appear_in_the_same_output() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Curl error (6): Could not resolve host: mirror.example.invalid\nStatus code: 404 for https://copr.fedorainfracloud.org/x",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_exits_1_when_only_generic_download_failure_text_is_present() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to download metadata for repo 'x'\nCannot download Packages/s/scrcpy.rpm",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_exits_77_when_dns_failure_is_reported_as_curl_error_six_only() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to download metadata for repo 'x'\nCurl error (6): Couldn't resolve host name",
         ),
     ]);
 

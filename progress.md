@@ -158,3 +158,7 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
 - **F3 tester 修正**：`smoke-test-inner.sh` 的網路特徵移除 `Failed to resolve`（dnf5 缺相依時印的是
   `Failed to resolve the transaction`，會被誤判成網路問題而在本機被略過）；也移除 403/404（COPR 名稱打錯也是 404），只收伺服器端 5xx。
   新增 404→1、503→77 兩個測試；完整測試（含真實容器煙霧測試）通過。
+- **F3 審查修正（網路分類）**：`smoke-test-inner.sh` 改成只看具體原因。先找一般失敗的證據（HTTP 4xx、`Curl error (22)`、
+  `Failed to resolve the transaction`、找不到套件、衝突），有就是失敗；沒有時才看具體連線問題（DNS、連不上、逾時、curl 6/7/28/35/52/56、5xx）。
+  不再把籠統的 `Failed to download metadata`／`Cannot download`／`Curl error` 當成網路證據；同一份輸出同時有 DNS 與 404 時以失敗為準（保守）。
+  新增 4 個回歸測試（共 25 個），其中 3 個在舊邏輯下失敗。真實容器煙霧測試仍通過。
