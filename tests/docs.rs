@@ -54,3 +54,46 @@ fn sync_badge_without_badge_line_is_none() {
 fn changelog_has_section_for_cargo_toml_version() {
     assert!(CHANGELOG.contains(concat!("## [", env!("CARGO_PKG_VERSION"), "]")));
 }
+
+/// 取出從 `heading` 那一行到下一個同級或更高層標題之前的文字，找不到標題時回傳空字串。
+fn section<'a>(doc: &'a str, heading: &str) -> &'a str {
+    let Some(start) = doc.find(heading) else {
+        return "";
+    };
+    let body = &doc[start + heading.len()..];
+    match body.find("\n## ") {
+        Some(end) => &body[..end],
+        None => body,
+    }
+}
+
+#[test]
+fn readme_quick_start_asks_for_usb_debugging_data_cable_and_start_command() {
+    let quick_start = section(README, "## 快速開始");
+
+    assert!(quick_start.contains("USB 偵錯"));
+    assert!(quick_start.contains("支援資料傳輸的 USB-C 線"));
+    assert!(quick_start.contains("dex2pc start"));
+}
+
+#[test]
+fn readme_acceptance_list_names_mouse_and_keyboard_checks() {
+    let acceptance = section(README, "## 實機驗收清單");
+
+    // 這兩項是任務的核心需求（滑鼠點擊、鍵盤輸入），沒列進清單就等於沒有追蹤
+    assert!(acceptance.contains("**滑鼠**"));
+    assert!(acceptance.contains("**鍵盤**"));
+}
+
+#[test]
+fn readme_acceptance_list_is_not_empty() {
+    let acceptance = section(README, "## 實機驗收清單");
+
+    assert!(acceptance.contains("- ["));
+}
+
+#[test]
+fn version_is_zero_x_test_release() {
+    // F10：版號進 0.x 測試版，1.0 之前由使用者決定何時升 MAJOR
+    assert!(env!("CARGO_PKG_VERSION").starts_with("0."));
+}
