@@ -217,3 +217,51 @@ fn packaging_readme_documents_deb_dependency_names_and_build_tool_choice() {
     assert!(readme.contains("dpkg-deb"));
     assert!(readme.contains("packaging/common") || readme.contains("`common/"));
 }
+
+#[test]
+fn deb_depends_cover_every_shared_library_the_binary_needs() {
+    let Some(deb) = built_deb() else {
+        return;
+    };
+    if !require_tools(&["readelf"]) {
+        return;
+    }
+    let extract = tempfile::tempdir().unwrap();
+    let status = Command::new("dpkg-deb")
+        .arg("-x")
+        .arg(deb)
+        .arg(extract.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    // 二進位直接連結的函式庫；ld-linux 由 libc6 提供。新增連結的函式庫時要同時補 Depends
+    let output = Command::new("readelf")
+        .args(["-d"])
+        .arg(extract.path().join("usr/bin/dex2pc"))
+        .output()
+        .unwrap();
+    let readelf = String::from_utf8(output.stdout).unwrap();
+    let needed: Vec<&str> = readelf
+        .lines()
+        .filter(|line| line.contains("(NEEDED)"))
+        .map(|line| line.split(['[', ']']).nth(1).unwrap())
+        .collect();
+    assert_eq!(
+        needed,
+        ["libgcc_s.so.1", "libc.so.6", "ld-linux-x86-64.so.2"]
+    );
+
+    let depends = field("Depends").unwrap();
+    assert!(depends.contains("libc6"), "{depends}");
+    assert!(depends.contains("libgcc-s1"), "{depends}");
+}
+
+#[test]
+fn cargo_toml_does_not_pull_in_cargo_deb() {
+    // 決定用 dpkg-deb 不用 cargo-deb：不新增建置用的 crate，也不在 Cargo.toml 寫 deb 的 metadata
+    let cargo_toml = std::fs::read_to_string(Path::new(ROOT).join("Cargo.toml")).unwrap();
+
+    assert!(!cargo_toml.contains("cargo-deb"), "{cargo_toml}");
+    assert!(!cargo_toml.contains("metadata.deb"), "{cargo_toml}");
+}
