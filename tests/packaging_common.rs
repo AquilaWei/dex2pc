@@ -125,6 +125,37 @@ fn gitignore_ignores_files_inside_dist_directory() {
 }
 
 #[test]
+fn git_status_stays_clean_after_dist_output_is_created() {
+    let repo = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        output.stdout
+    };
+    git(&["init", "-q"]);
+    std::fs::write(repo.path().join(".gitignore"), GITIGNORE).unwrap();
+    git(&["add", ".gitignore"]);
+    git(&[
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "init",
+    ]);
+    std::fs::create_dir(repo.path().join("dist")).unwrap();
+    std::fs::write(repo.path().join("dist/dex2pc-0.2.0-1.x86_64.rpm"), b"").unwrap();
+
+    assert_eq!(git(&["status", "--porcelain"]), b"");
+}
+
+#[test]
 fn desktop_file_execs_plain_dex2pc_start_without_watch() {
     assert!(DESKTOP.lines().any(|line| line == "Exec=dex2pc start"));
 }
