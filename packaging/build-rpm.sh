@@ -1,5 +1,6 @@
 #!/bin/sh
 # 在本機用 rpmbuild 產出 dex2pc 的 binary rpm，放到專案根目錄的 dist/。
+# 輸出目錄預設是 dist/，可用環境變數 DEX2PC_DIST_DIR 改（測試用，避免多個建置互相覆蓋）。
 # 原始碼取自 git 追蹤的檔案（含尚未 commit 的修改），建置過程用暫存的 rpmbuild 目錄，不動 ~/rpmbuild。
 set -eu
 
@@ -29,6 +30,10 @@ rpmbuild -bb $nodeps \
     --define "dex2pc_version $version" \
     "$top/SPECS/dex2pc.spec"
 
-mkdir -p dist
-cp "$top"/RPMS/*/*.rpm dist/
-ls -1 dist/*.rpm
+dist=${DEX2PC_DIST_DIR:-dist}
+mkdir -p "$dist"
+# 只印出這次建出來的檔案，dist/ 裡以前的產物不列出
+for rpm in "$top"/RPMS/*/*.rpm; do
+    cp "$rpm" "$dist/"
+    echo "$dist/$(basename "$rpm")"
+done

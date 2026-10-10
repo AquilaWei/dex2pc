@@ -26,7 +26,9 @@ with a virtual display so the keyboard and mouse of the PC control DeX.
 %autosetup
 
 %build
-cargo build --release --locked
+# 明確指定 --target-dir：不受使用者的 CARGO_TARGET_DIR 或 cargo 設定的 target-dir 影響，
+# 讓 %install 讀的路徑和建置輸出一致
+cargo build --release --locked --target-dir target
 
 %install
 install -D -m 0755 target/release/dex2pc %{buildroot}%{_bindir}/dex2pc

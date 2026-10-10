@@ -124,3 +124,27 @@ fn build_script_produces_rpm_named_after_cargo_toml_version() {
     assert!(query.status.success(), "{query:?}");
     assert_eq!(String::from_utf8(query.stdout).unwrap(), "x86_64\n");
 }
+
+#[test]
+fn build_script_succeeds_when_cargo_target_dir_points_elsewhere() {
+    if run_in_root("rpmbuild", &["--version"]).is_none() {
+        return;
+    }
+    let target = tempfile::tempdir().unwrap();
+    let dist = tempfile::tempdir().unwrap();
+
+    let output = Command::new("sh")
+        .arg("packaging/build-rpm.sh")
+        .current_dir(ROOT)
+        .env("CARGO_TARGET_DIR", target.path())
+        .env("DEX2PC_DIST_DIR", dist.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // rpmbuild 自己的輸出也在 stdout，腳本印的 rpm 路徑是最後一行
+    let rpm = stdout.lines().last().unwrap();
+    assert!(Path::new(rpm).starts_with(dist.path()), "{rpm}");
+    assert!(Path::new(rpm).is_file(), "{rpm}");
+}

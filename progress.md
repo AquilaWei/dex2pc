@@ -120,3 +120,6 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 目前 rpm 只裝 `/usr/bin/dex2pc`；`.desktop`、授權檔、README、`Requires` 都留給 F2。repo 目前沒有 LICENSE 檔，F2 需要處理。
   - 測試：`tests/rpm.rs` 的 build 測試會真的跑 rpmbuild（約 18 秒，要能下載 crate）；缺 rpmbuild 時本機略過，設了 `CI` 就失敗。
   - 下一步：F2（rpm 軌道）或 F8（deb 軌道，可平行）。
+- **F1 審查修正**：spec 的 `cargo build` 加 `--target-dir target`，不受 `CARGO_TARGET_DIR` 或 cargo 設定的 `target-dir` 影響；
+  `build-rpm.sh` 新增環境變數 `DEX2PC_DIST_DIR`（預設 `dist`，測試用）並只印出這次建出的 rpm。
+  回歸測試 `build_script_succeeds_when_cargo_target_dir_points_elsewhere` 在舊 spec 下失敗、修正後通過。
