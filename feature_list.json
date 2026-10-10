@@ -107,13 +107,5 @@
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-  "questions": [
-    {
-      "question": "確認一下：你說的「CL」是指 CI（每次 push/PR 自動建置 rpm 與 deb 並上傳 artifact）嗎？",
-      "options": [
-        "是，CI 每次建置，但只在 X.Y.0 才 tag 與發佈",
-        "不是，我指的是 CHANGELOG，請說明想要的行為"
-      ]
-    }
-  ]
+  "questions": []
 }
