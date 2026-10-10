@@ -418,3 +418,16 @@ fn inner_exits_1_when_curl_22_has_no_http_status_to_decide_by() {
 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
 }
+
+#[test]
+fn inner_exits_1_when_http_404_from_curl_22_outweighs_connection_refused() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to connect to copr.fedorainfracloud.org port 443: Connection refused\nCurl error (22): HTTP response code said error for https://copr.fedorainfracloud.org/coprs/zeno/scrcpyy/repo/fedora-44/ (The requested URL returned error: 404)",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
