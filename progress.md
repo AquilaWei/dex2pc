@@ -6,6 +6,8 @@
 
 ## 現況（2026-10-10）
 
+> 以下三行是第一輪的觀察；現已更新，master 已併入，見「使用者回覆（第二輪）」。
+
 - 這個 worktree（分支 `hb/18-samsungdex-rpm`）只有 Init commit，**沒有任何檔案**。
 - 真正的程式在主 checkout `/home/Aquila/Documents/WorkSpace/SamsungDex2DesktopPC`：Rust crate `dex2pc` 0.2.0，
   有 Cargo.toml、src/、tests/、README、CHANGELOG，以及**已 staged 但未 commit** 的狀態（主 checkout 的 `feature_list.json` 是舊專案的計畫，不是這份）。
@@ -14,8 +16,8 @@
 
 ## 計畫
 
-F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 多發行版容器安裝煙霧測試 → F7 doctor 依發行版提示
-→ F4 GitHub Actions 建置與發佈（SHA256）→ F5 README/CHANGELOG → F6 實機驗收清單。
+F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
+→ F4 GitHub Actions 建置與發佈（SHA256）→ F5 README/CHANGELOG → F6 實機驗收清單 → F8 deb 評估筆記（只寫文件）。
 
 ## 使用者回覆（2026-10-10）
 
@@ -27,18 +29,30 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 多�
   相依問題只是搬進套件包裡，且維護成本更高。使用者目標是 rpm，Flatpak 列為之後可選的獨立功能（見 questions）。
   跨發行版的相依問題改用 Recommends 與 doctor 的分發版提示處理。
 
+## 使用者回覆（2026-10-10，第二輪）
+
+- 發行版：**只做 Fedora**（推翻上一輪「相容 RHEL/openSUSE」）；但要**考慮 deb**。處理：打包檔分目錄（packaging/rpm/、packaging/common/），
+  新增 F8 只寫 deb 評估筆記；是否真的做 deb 列在 questions。多發行版 matrix 與 F7（doctor 依發行版提示）已移除，**F7 的 id 不再使用**。
+- scrcpy：**Requires 強制相依**。影響：Fedora 官方庫沒有 scrcpy，使用者要先 `dnf copr enable zeno/scrcpy`，否則 dnf 安裝失敗；
+  F3 煙霧測試要先啟用 COPR（需要網路），README（F5）要寫明。
+- doctor 提示維持只提示 Fedora 指令。
+- 發佈：只放 GitHub Release。
+- Flatpak：先不做，rpm 完成後再評估。
+- repo 內容：主 checkout 現在有 `master` 分支，含完整程式（Cargo.toml 0.2.0 等）。已把 master 併進本分支（見下方），
+  master 上舊專案的 feature_list.json / progress.md 衝突時以本計畫為準，舊內容留在 git 歷史。
+
 ## 決策與理由
 
 - `rpmbuild` + 自寫 spec（使用者已確認）。
 - verify 沿用專案既有的 `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`；
   rpm 相關檢查寫成 cargo 整合測試（tests/rpm.rs），缺少 rpmbuild/rpmlint/容器時自動略過，CI 一定要跑。
 - 版號只寫在 Cargo.toml，spec 由它讀取並用測試驗證一致；進版需同步 CHANGELOG、badge、tag `vX.Y.Z`。
-- 套件相依：scrcpy 不在 Fedora 官方庫（需 COPR zeno/scrcpy），RHEL 系也沒有；Recommends（建議）或 Requires 待使用者決定。
+- 套件相依：scrcpy 不在 Fedora 官方庫（需 COPR zeno/scrcpy），RHEL 系也沒有；使用者決定用 **Requires**。
 - rpm 與 tarball 輸出到 `dist/`，不進 git。
 
 ## 給下一個 session
 
-1. 先確認 questions 的答案（發行版範圍、scrcpy 相依、發佈位置、repo 內容、Flatpak），尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
+1. 先確認 questions 的答案（目前只剩 deb 的處理方式），尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
 2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
