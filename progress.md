@@ -196,8 +196,9 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   依 `scrcpy --help`：sdk 滑鼠預設把右鍵綁成返回（`bhsn`）。改用
   `--keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local` 後使用者確認右鍵、打字、剪貼簿都正常，
   所以 `Options::default` 鍵盤改 uhid，`build_args` 一律加 mouse-bind 與 IME policy。
-  **待確認**：中文輸入、快捷鍵、Ctrl+C、桌面捷徑；**拔線重連失敗**（使用者描述「程式馬上就崩潰」，
-  還沒拿到終端機輸出，不確定當時有沒有加 `--watch`）。
+  先前回報的「拔線重連失敗」是在沒加 `--watch` 的 scrcpy 視窗上拔線，結束是預期行為；
+  之後用 `dex2pc start --watch` 實測，log 顯示 scrcpy 以 exit code 2 結束 → 等待 → 重新啟動，使用者確認視窗自動回來。
+  **待確認**：中文輸入、快捷鍵、Ctrl+C、桌面捷徑。
 
 ## 狀態
 
