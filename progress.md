@@ -175,3 +175,5 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - **尚未驗證**：deb 沒有在真實 Debian 13／Ubuntu 26.04 上安裝過（F9 做）；lintian 本機沒裝，沒跑；`libc6` 沒有版本下限（沒有 dpkg-shlibdeps）。
   - 本機實跑：`dpkg-deb -I/-c` 欄位與內容正確；把 scrcpy 改成 Recommends 的變異測試會讓 2 個測試失敗。
   - 下一步：F9（Debian／Ubuntu 容器煙霧測試）；rpm 軌道剩 F5（文件）。
+
+- 修正（審查）：`build-deb.sh` 在非 x86_64 主機直接拒絕，並在打包前用 `readelf -h` 確認執行檔是 x86-64；`tests/deb.rs` 新增 3 個測試（套件內執行檔的 ELF 架構、非 x86_64 主機拒絕、非 x86-64 執行檔拒絕）。

@@ -96,6 +96,81 @@ fn deb_architecture_is_amd64() {
 }
 
 #[test]
+fn packaged_binary_is_an_x86_64_elf() {
+    let Some(deb) = built_deb() else {
+        return;
+    };
+    if !require_tools(&["readelf"]) {
+        return;
+    }
+    let extract = tempfile::tempdir().unwrap();
+    let status = Command::new("dpkg-deb")
+        .arg("-x")
+        .arg(deb)
+        .arg(extract.path())
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let output = Command::new("readelf")
+        .arg("-h")
+        .arg(extract.path().join("usr/bin/dex2pc"))
+        .output()
+        .unwrap();
+    let header = String::from_utf8(output.stdout).unwrap();
+
+    assert!(header.contains("Advanced Micro Devices X86-64"), "{header}");
+}
+
+/// 在 PATH 前面放一個假指令（印出指定內容）後執行 build-deb.sh，回傳結果。
+fn build_with_fake(command: &str, script: &str) -> Output {
+    let bin = tempfile::tempdir().unwrap();
+    let fake = bin.path().join(command);
+    std::fs::write(&fake, script).unwrap();
+    Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+    let dist = tempfile::tempdir().unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+    Command::new("sh")
+        .arg("packaging/build-deb.sh")
+        .current_dir(ROOT)
+        .env("PATH", path)
+        .env("DEX2PC_DIST_DIR", dist.path())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn build_refuses_on_a_non_x86_64_host() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du"]) {
+        return;
+    }
+
+    let output = build_with_fake("uname", "#!/bin/sh\necho aarch64\n");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("aarch64"));
+}
+
+#[test]
+fn build_refuses_a_binary_that_is_not_x86_64() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
+        return;
+    }
+
+    let output = build_with_fake(
+        "readelf",
+        "#!/bin/sh\necho '  Machine:                           AArch64'\n",
+    );
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("AArch64"));
+}
+
+#[test]
 fn deb_depends_on_adb_and_scrcpy_3_2_as_hard_requirements() {
     let Some(depends) = field("Depends") else {
         return;

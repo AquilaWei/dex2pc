@@ -12,12 +12,26 @@ version=$(sh packaging/common/version.sh)
 min_scrcpy=3.2
 maintainer="AquilaWei <weichuangtaiwan@gmail.com>"
 
+# 套件固定標 amd64：非 x86_64 主機直接拒絕，不產出架構標錯的套件
+host_arch=$(uname -m)
+if [ "$host_arch" != x86_64 ]; then
+    echo "build-deb.sh only builds amd64 packages on x86_64 hosts (this host: $host_arch)" >&2
+    exit 1
+fi
+
 top=$(mktemp -d)
 trap 'rm -rf "$top"' EXIT
 pkg=$top/pkg
 
 # --target-dir 明確指定：不受使用者的 CARGO_TARGET_DIR 或 cargo 設定影響
 cargo build --release --locked --target-dir "$root/target"
+
+# 打包前再確認執行檔真的是 x86-64 ELF（例如 .cargo/config 指定了別的 target 時會不符）
+machine=$(readelf -h target/release/dex2pc | sed -n 's/^ *Machine: *//p')
+if [ "$machine" != "Advanced Micro Devices X86-64" ]; then
+    echo "target/release/dex2pc is not an x86-64 binary (Machine: $machine)" >&2
+    exit 1
+fi
 
 install -D -s -m 0755 target/release/dex2pc "$pkg/usr/bin/dex2pc"
 install -D -m 0644 packaging/common/dex2pc.desktop "$pkg/usr/share/applications/dex2pc.desktop"

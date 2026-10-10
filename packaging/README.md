@@ -14,7 +14,7 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 
 ## deb 的對應
 
-支援 **Debian 13（trixie）與 Ubuntu 26.04 以上**，只有 amd64。
+支援 **Debian 13（trixie）與 Ubuntu 26.04 以上**，只有 amd64；`build-deb.sh` 在非 x86_64 主機或執行檔不是 x86-64 ELF 時會拒絕打包。
 
 | 需要 | Fedora（rpm） | Debian / Ubuntu（deb） |
 |------|---------------|------------------------|
