@@ -49,6 +49,13 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
 - 仍只限 x86_64/amd64；`doctor` 提示維持只列 Fedora 指令，deb 使用者靠 README。
 - 風險：Debian/Ubuntu 倉庫的 scrcpy 多半低於 3.2（dex2pc 目前要求 3.2 以上），相依與支援版本見 questions。
 
+## 使用者回覆（第四輪）
+
+- deb 支援 **Debian 13（trixie）與 Ubuntu 26.04 以上**（amd64）；倉庫 scrcpy 不夠新時，README 說明如何取得。
+- deb 用 **`Depends: scrcpy (>= 3.2)` 強制相依**，與 rpm 一致。下限必須與程式內檢查的最低版本相同（目前 master 的程式要求 3.2，實作時再核對）。
+- 影響：倉庫 scrcpy 太舊時 `apt install` 會失敗，所以 F9 在容器內用 equivs 建假的 scrcpy 3.2 套件滿足相依（要在輸出註明），
+  並回報各映像檔實際的 scrcpy 版本，供 F10 寫 README。目前沒有未決問題。
+
 ## 決策與理由
 
 - `rpmbuild` + 自寫 spec（使用者已確認）。
@@ -60,7 +67,7 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
 
 ## 給下一個 session
 
-1. 先確認 questions 的答案（deb 支援版本與 scrcpy 相依），尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
+1. questions 已清空，可依 F1 開始；F9 查到的倉庫 scrcpy 版本要回寫到 F10 的 README，尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
 2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。

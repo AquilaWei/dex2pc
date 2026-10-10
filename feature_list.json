@@ -38,22 +38,23 @@
     },
     {
       "id": "F8",
-      "description": "deb 可行性筆記（只寫文件，不建 deb）：評估之後加 deb 要改哪些地方，確認目前的 packaging 目錄結構與版號來源不需要重做",
+      "description": "packaging/build-deb.sh：用 dpkg-deb 在本機產出 dex2pc 的 .deb（amd64，Debian 13 與 Ubuntu 26.04 以上）；版號由 Cargo.toml 讀取，與 rpm 共用 packaging/common/ 的 .desktop 檔，不新增建置用的 crate",
       "steps": [
         "progress.md 或 packaging/README.md 記錄 deb 所需的對應：control 的 Depends（adb、scrcpy 在 Debian/Ubuntu 的套件名稱）、建置方式候選（cargo-deb 或 dpkg-deb）、可重用的共用檔",
-        "文件明列「deb 不在本次範圍」，且不新增任何 deb 建置腳本或 CI job"
+        "`dpkg-deb -I` 顯示的 Version 等於 Cargo.toml 的 version，Architecture 為 amd64，Depends 含 `android-tools-adb` 與 `scrcpy (>= 3.2)`（強制相依，與 rpm 一致；下限需與 dex2pc 程式內檢查的 scrcpy 最低版本相同）"
       ],
       "passes": false
     },
     {
       "id": "F9",
-      "description": "在 Debian/Ubuntu 容器內安裝 deb 並做啟動驗證",
+      "description": "在 Debian 13（trixie）與 Ubuntu 26.04 容器內安裝 deb 並做啟動驗證",
       "steps": [
-        "`packaging/smoke-test-deb.sh` 在指定的 debian/ubuntu 容器內用 `apt install ./dex2pc_*.deb` 安裝成功（相依 scrcpy 的來源依 questions 的答案處理）",
+        "`packaging/smoke-test-deb.sh <image>` 在 debian:13 與 ubuntu:26.04 容器內用 `apt install ./dex2pc_*.deb` 安裝成功；倉庫的 scrcpy 不到 3.2 時，腳本改用以 equivs 建立、版本為 3.2 的假 scrcpy 套件滿足相依，並在輸出中註明，不假裝是真的 scrcpy",
         "容器內 `dex2pc --version` 輸出 Cargo.toml 的版號",
         "容器內 `dex2pc doctor` 能執行並回報沒有手機（不 crash）；其安裝提示仍是 Fedora 指令，README 需註明",
         "`apt remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
-        "沒有容器引擎時本機明確略過（exit 0）；CI 一定要跑"
+        "沒有容器引擎時本機明確略過（exit 0）；CI 一定要跑",
+        "腳本回報各映像檔倉庫實際的 scrcpy 版本，作為 README（F10）說明取得方式的依據"
       ],
       "passes": false
     },
@@ -84,7 +85,8 @@
       "id": "F10",
       "description": "文件同步（deb 部分）：README 加入 deb 安裝與移除方式、支援的 Debian/Ubuntu 版本、自建 deb 的步驟，CHANGELOG 記錄",
       "steps": [
-        "README 的「安裝」段落有可直接複製的 `sudo apt install ./dex2pc_*.deb`，並說明 scrcpy 在 Debian/Ubuntu 的取得方式與最低版本",
+        "README 的「安裝」段落有可直接複製的 `sudo apt install ./dex2pc_*.deb`，並說明 scrcpy 倉庫版本若低於 3.2（`Depends: scrcpy (>= 3.2)` 會讓 apt 安裝失敗）要先怎麼取得新版，步驟依 F9 查到的倉庫版本決定",
+        "README 明列 deb 只支援 Debian 13 與 Ubuntu 26.04 以上（amd64）",
         "README 說明 `doctor` 的安裝提示目前只列 Fedora 指令，Debian/Ubuntu 使用者請照 README 安裝",
         "README 說明從原始碼自建 deb 的步驟與移除方式 `sudo apt remove dex2pc`",
         "CHANGELOG [Unreleased] 記錄新增 deb 安裝包",
@@ -103,21 +105,5 @@
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-  "questions": [
-    {
-      "question": "deb 支援哪些版本？Debian/Ubuntu 倉庫的 scrcpy 多半低於 dex2pc 需要的 3.2",
-      "options": [
-        "Debian 13（trixie）與 Ubuntu 26.04 以上，scrcpy 不夠新時於 README 說明如何取得",
-        "Ubuntu 24.04 LTS 與 Debian 13，並要求使用者自行安裝新版 scrcpy（snap 或官方 release）",
-        "只列最新版，不保證舊版"
-      ]
-    },
-    {
-      "question": "deb 的 Depends 要怎麼處理 scrcpy？",
-      "options": [
-        "Depends: scrcpy (>= 3.2) 強制相依，與 rpm 一致",
-        "Recommends: scrcpy，不強制（舊版倉庫的 scrcpy 太舊時仍可安裝）"
-      ]
-    }
-  ]
+  "questions": []
 }
