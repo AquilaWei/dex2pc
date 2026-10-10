@@ -153,6 +153,25 @@ fn readme_rpm_build_command_installs_the_tools_the_build_needs() {
     }
 }
 
+#[test]
+fn readme_rpm_build_command_covers_every_buildrequires_in_the_spec() {
+    // 寫死的清單之外，spec 的 BuildRequires 一改就要跟著改 README，否則這裡失敗
+    let spec = include_str!("../packaging/rpm/dex2pc.spec");
+    let line = install_line(README, "sudo dnf install rpm-build");
+    let installed: Vec<&str> = line.split_whitespace().collect();
+
+    for name in spec
+        .lines()
+        .filter_map(|line| line.strip_prefix("BuildRequires:"))
+        .filter_map(|rest| rest.split_whitespace().next())
+    {
+        assert!(
+            installed.contains(&name),
+            "spec 的 BuildRequires {name} 不在 README 的指令：{line}"
+        );
+    }
+}
+
 /// 回傳含 `prefix` 的那一行（README 裡只出現一次的指令）
 fn install_line<'a>(doc: &'a str, prefix: &str) -> &'a str {
     doc.lines()
