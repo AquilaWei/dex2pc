@@ -103,3 +103,11 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
 2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
+
+## 進度紀錄
+
+- **F11 完成**（2026-10-10）：`packaging/common/version.sh`（只讀 Cargo.toml 的 `[package]` version）、
+  `packaging/common/dex2pc.desktop`（Exec=`dex2pc start`，欄位與 `install-desktop` 產生的一致，只有 Exec 不含絕對路徑）、
+  `.gitignore` 加 `dist/`，測試在 `tests/packaging_common.rs`。完整 verify 通過（fmt、clippy、全部測試）。
+  下一步：rpm 軌道（F1）與 deb 軌道（F8）可平行開始。
+  `desktop-file-validate` 缺少時測試略過，但設了環境變數 `CI` 就會失敗，CI 要安裝 desktop-file-utils。

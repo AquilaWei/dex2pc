@@ -9,7 +9,7 @@
         "`.gitignore` 排除 `dist/`，`git status` 在產生 dist/ 後仍乾淨",
         "整合測試（tests/packaging_common.rs）檢查上述三項；預期的版號與 Exec 字串直接寫死在測試裡"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F1",
