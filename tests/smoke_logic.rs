@@ -374,3 +374,17 @@ fn inner_exits_77_when_dns_failure_is_reported_as_curl_error_six_only() {
 
     assert_eq!(output.status.code(), Some(77), "{output:?}");
 }
+
+#[test]
+fn inner_exits_77_for_real_dnf5_output_when_network_is_down_during_install() {
+    // 在 --network none 的 Fedora 容器實際跑出來的 dnf5 輸出（安裝本機 rpm 時）
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to download metadata (metalink: \"https://mirrors.fedoraproject.org/metalink?repo=updates-released-f44&arch=x86_64\") for repository \"updates\": Download failed: Curl error (6): Could not resolve hostname for https://mirrors.fedoraproject.org/metalink?repo=updates-released-f44&arch=x86_64 [Could not resolve host: mirrors.fedoraproject.org]",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}
