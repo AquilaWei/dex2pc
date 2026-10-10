@@ -1,6 +1,6 @@
 [package]
 name = "dex2pc"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 description = "Show Samsung DeX as a window on a Linux PC over a USB-C cable, driven by scrcpy"
 license = "Apache-2.0"
