@@ -31,7 +31,7 @@
         "`rpmlint` 對產出的 rpm 沒有 error（warning 逐項處理或在文件說明原因）",
         "測試以 rpm 指令檢查上述項目，工具缺少時略過"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F3",

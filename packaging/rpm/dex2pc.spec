@@ -16,6 +16,12 @@ Source0:        %{name}-%{version}.tar.gz
 # edition 2024 需要 Rust 1.85 以上
 BuildRequires:  cargo >= 1.85
 BuildRequires:  rust >= 1.85
+BuildRequires:  desktop-file-utils
+
+# dex2pc 啟動時呼叫 adb 與 scrcpy。scrcpy 不在 Fedora 官方庫，要先啟用 COPR zeno/scrcpy；
+# 3.2 是程式內檢查的最低版本（src/doctor.rs 的 MIN_SCRCPY），兩邊要一起改
+Requires:       android-tools
+Requires:       scrcpy >= 3.2
 
 %description
 dex2pc shows Samsung DeX as a window on a Linux PC over a USB-C cable,
@@ -31,11 +37,18 @@ with a virtual display so the keyboard and mouse of the PC control DeX.
 cargo build --release --locked --target-dir target
 
 %install
-install -D -m 0755 target/release/dex2pc %{buildroot}%{_bindir}/dex2pc
+install -D -s -m 0755 target/release/dex2pc %{buildroot}%{_bindir}/dex2pc
+install -D -m 0644 packaging/common/dex2pc.desktop %{buildroot}%{_datadir}/applications/dex2pc.desktop
+
+%check
+desktop-file-validate %{buildroot}%{_datadir}/applications/dex2pc.desktop
 
 %files
+%license LICENSE
+%doc README.md
 %{_bindir}/dex2pc
+%{_datadir}/applications/dex2pc.desktop
 
 %changelog
-* Sat Oct 10 2026 AquilaWei <weichuangtaiwan@gmail.com> - %{version}-1
+* Sat Oct 10 2026 AquilaWei <weichuangtaiwan@gmail.com> - %{version}-1%{?dist}
 - Initial rpm package

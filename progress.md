@@ -123,3 +123,13 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
 - **F1 審查修正**：spec 的 `cargo build` 加 `--target-dir target`，不受 `CARGO_TARGET_DIR` 或 cargo 設定的 `target-dir` 影響；
   `build-rpm.sh` 新增環境變數 `DEX2PC_DIST_DIR`（預設 `dist`，測試用）並只印出這次建出的 rpm。
   回歸測試 `build_script_succeeds_when_cargo_target_dir_points_elsewhere` 在舊 spec 下失敗、修正後通過。
+
+- **F2 完成**（2026-10-10）：rpm 現在裝 `/usr/bin/dex2pc`、`/usr/share/applications/dex2pc.desktop`（取自 `packaging/common/`）、
+  `%license LICENSE`、`%doc README.md`；`Requires: android-tools`、`Requires: scrcpy >= 3.2`（下限對應 `src/doctor.rs` 的 `MIN_SCRCPY`，要一起改）。
+  - **新增 `LICENSE`**：repo 原本沒有授權檔，`Cargo.toml` 宣告 Apache-2.0，這裡放標準的 Apache-2.0 全文（取自本機 abseil-cpp 套件的同一份標準文字）。
+  - spec 加 `BuildRequires: desktop-file-utils` 與 `%check`（desktop-file-validate）；binary 用 `install -s` 去除符號。
+  - `packaging/rpm/dex2pc.rpmlintrc`：過濾的項目都寫了原因（scrcpy 拼字、未簽章、Packager/Group、SPDX 授權識別碼；URL 與 man page 附 TODO 條件）。
+    rpmlint 結果 0 errors、0 warnings。
+  - 測試 `tests/rpm_contents.rs`（6 個）共用一次 build-rpm.sh，用 rpm/rpm2cpio 檢查檔案、相依、packaged 的 .desktop 與 rpmlint；缺工具時本機略過，設了 `CI` 就失敗。
+  - **rpmlint 本機沒裝**，我裝在 /tmp/rl 的 venv（`pip install rpmlint`，不在 repo 內）驗證；CI 需要安裝 rpmlint。
+  - 下一步：F3（Fedora 容器煙霧測試，需 COPR）或 deb 軌道 F8。

@@ -1,0 +1,20 @@
+# rpmlint 的例外。每一條都寫原因；新增前先確認不是套件本身該修的問題。
+
+# scrcpy 是專有名詞（專案名稱），不是拼字錯誤
+addFilter("spelling-error .*scrcpy")
+
+# 本機與 CI 建出的 rpm 不簽章；散布時以 GitHub Release 附的 SHA256 檔驗證
+addFilter("no-signature")
+
+# 這兩個 tag 在 Fedora 打包規範裡不該寫（Packager 由建置系統填，Group 已廢除）
+addFilter("no-packager-tag")
+addFilter("no-group-tag")
+
+# TODO: 專案公開並確定網址後 - 在 spec 補 URL 後移除這條
+addFilter("no-url-tag")
+
+# TODO: 有 man page 時 - 用 clap_mangen 產生 man page 後移除這條
+addFilter("no-manual-page-for-binary")
+
+# rpmlint 的授權清單不含 SPDX 的 "Apache-2.0" 寫法，Fedora 現行規範要求用 SPDX 識別碼，以規範為準
+addFilter("invalid-license")
