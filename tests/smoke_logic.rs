@@ -266,3 +266,29 @@ fn outer_skips_locally_when_image_cannot_be_pulled() {
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     assert!(stderr(&output).contains("略過：拉不到映像"));
 }
+
+#[test]
+fn inner_exits_1_when_copr_returns_http_404_for_a_mistyped_repo() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Status code: 404 for https://copr.fedorainfracloud.org/coprs/zeno/scrcpyy/repo/fedora-44/",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_exits_77_when_copr_server_answers_http_503() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Status code: 503 for https://copr.fedorainfracloud.org/coprs/zeno/scrcpy/repo/fedora-44/",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}

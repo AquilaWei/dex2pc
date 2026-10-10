@@ -155,3 +155,6 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 新增 `tests/smoke_logic.rs`（14 個）：假的 dnf／dex2pc／podman，不需要網路或容器，本機與 CI 都跑。
   - `tests/rpm_contents.rs` 模擬本機的略過測試改成 `env_remove("CI")`；真正的煙霧測試保留繼承的 CI。
   - 已用真實 Fedora 44 容器重跑通過。
+- **F3 tester 修正**：`smoke-test-inner.sh` 的網路特徵移除 `Failed to resolve`（dnf5 缺相依時印的是
+  `Failed to resolve the transaction`，會被誤判成網路問題而在本機被略過）；也移除 403/404（COPR 名稱打錯也是 404），只收伺服器端 5xx。
+  新增 404→1、503→77 兩個測試；完整測試（含真實容器煙霧測試）通過。

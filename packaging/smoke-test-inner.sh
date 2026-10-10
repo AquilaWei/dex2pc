@@ -11,8 +11,10 @@ rpm=$2
 root=${SMOKE_ROOT:-}
 network_down=77
 
-# dnf / curl 連不上時的錯誤訊息特徵。只認得出這些才算網路問題，其他錯誤一律當作失敗
-network_pattern='Could not resolve host|Curl error|Failed to download metadata|Cannot download|Cannot prepare internal mirrorlist|Temporary failure in name resolution|Network is unreachable|Connection timed out|Connection refused|Failed to connect|Status code: (403|404|5[0-9][0-9]) for|Failed to resolve'
+# dnf / curl 連不上時的錯誤訊息特徵。只認得出這些才算網路問題，其他錯誤一律當作失敗。
+# 不要放 "Failed to resolve"（dnf5 的 "Failed to resolve the transaction" 是缺相依這類一般錯誤）
+# 也不要放 404/403（COPR 名稱打錯也會是 404），只收伺服器端的 5xx。
+network_pattern='Could not resolve host|Curl error|Failed to download metadata|Cannot download|Cannot prepare internal mirrorlist|Temporary failure in name resolution|Network is unreachable|Connection timed out|Connection refused|Failed to connect|Status code: 5[0-9][0-9] for'
 
 # 執行 dnf；成功就不印輸出（-q 之後仍然很長），失敗時把輸出印到 stderr，
 # 並依訊息判斷是網路問題（77）還是一般錯誤（1）
