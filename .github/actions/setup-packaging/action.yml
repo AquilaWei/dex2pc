@@ -1,0 +1,15 @@
+name: Set up packaging tools
+description: 安裝建置與測試 rpm / deb 需要的工具（GitHub-hosted ubuntu runner 用）
+
+runs:
+  using: composite
+  steps:
+    - name: Install packaging tools
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        # rpm: rpmbuild / rpm2cpio；dpkg 與 podman 在 runner 映像裡已經有
+        sudo apt-get install -y -qq rpm rpmlint desktop-file-utils cpio binutils git tar gzip lintian
+    - name: Install Rust components
+      shell: bash
+      run: rustup component add rustfmt clippy

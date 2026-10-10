@@ -186,3 +186,13 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - lintian（Debian 13 容器）：0 error；抓到 native 套件的 changelog 應叫 `changelog.gz`，已從 `changelog.Debian.gz` 改名（build-deb.sh、tests/deb.rs）；剩 `no-manual-page` warning。
   - 測試：`tests/smoke_deb_logic.rs`（31 個，假 apt-get／apt-cache／dpkg／equivs-build／dex2pc／podman），變異檢查：把 scrcpy 版本比較 `ge` 改 `gt` 會讓「剛好等於下限」測試失敗；`tests/deb.rs` +1（README 內容）。
   - 下一步：F4（GitHub Actions）；F5、F10 文件；F6 實機。
+
+- F4 完成（GitHub Actions）：
+  - `.github/workflows/ci.yml`（push／PR／workflow_call）：`workflow-lint`（docker 跑 actionlint 1.7.7）、`verify`（fmt、clippy、`cargo test --locked`）、`package`（build-rpm、build-deb、lintian、上傳 artifact）、`smoke`（matrix：rpm／Debian 13／Ubuntu 26.04，下載 artifact 後跑煙霧測試）。不含任何 tags／paths 過濾，PATCH 版照跑。
+  - `.github/workflows/release.yml`（只有 `v*.*.0` tag）：`check-tag` → `ci`（重用 ci.yml）→ `release`（SHA256、CHANGELOG notes、`gh release create --verify-tag`）；只有 release job 有 `contents: write`，只用 `GITHUB_TOKEN`。
+  - `.github/actions/setup-packaging`：安裝 rpm、rpmlint、desktop-file-utils、cpio、binutils、lintian、rustfmt／clippy。
+  - `packaging/check-tag.sh`（tag 必須是 `vX.Y.0` 且等於 Cargo.toml 版號）、`packaging/release-notes.sh`（擷取 CHANGELOG 該版本段落，找不到或是空的就失敗）。
+  - 測試：`tests/release.rs`（25 個：腳本行為 + workflow 文字結構 + 有 actionlint 時執行它）。本機用 podman 跑 `rhysd/actionlint:1.7.7`，兩個 workflow 與 composite action 都沒有問題。
+  - **需要使用者操作／只能在 GitHub 驗證**：(1) 推一般分支確認 `ci.yml` 全綠（尤其 Ubuntu runner 上的 rpm 建置與 rpmlint、runner 上的 podman 能拉 Fedora／Debian／Ubuntu 映像）；(2) 之後 MINOR 進版時推 `vX.Y.0` tag，確認 Release 建立、附件與 `.sha256`、notes；(3) 確認 repo 的 Actions 權限允許 workflow 建立 Release（Settings → Actions → General → Workflow permissions 不能是完全唯讀以外的限制導致 `contents: write` 被拒）。
+  - 下一步：F5（rpm 文件）、F10（deb 文件）、F6（實機驗收）。
+  - 在 `ubuntu:24.04` 容器（rpm 4.18.2、rpmlint 2.5.0，和 GitHub 的 ubuntu-latest 相同工具鏈）模擬 CI 跑完整測試，抓到兩個 Ubuntu 才有的問題並修好：rpm 的文件／授權目錄會帶版號（`/usr/share/doc/dex2pc-0.2.0`），spec 加 `%global _docdir_fmt %{name}` 與 `_build_id_links none`；無 `%dist` 的檔名 `dex2pc-0.2.0-1.x86_64.rpm` 原本對不上 smoke-test.sh 的 glob，已放寬。修好後該容器內 fmt、clippy、全部測試、build-rpm、build-deb、`lintian --fail-on error` 全過。模擬容器裡沒有 podman，所以容器內安裝的測試在那裡是略過的（GitHub runner 有 podman，且 CI 不可略過）。

@@ -36,8 +36,8 @@ fi
 version=$(sh packaging/common/version.sh)
 rpm=${1:-}
 if [ -z "$rpm" ]; then
-    # 檔名是 dex2pc-<版號>-1.<dist>.x86_64.rpm；只取版號對得上的，避免誤用舊版本的產物
-    for candidate in "dist/dex2pc-$version-1."*.x86_64.rpm; do
+    # 檔名是 dex2pc-<版號>-1.<dist>.x86_64.rpm（沒有 dist 標記的 rpmbuild 則是 dex2pc-<版號>-1.x86_64.rpm）；只取版號對得上的，避免誤用舊版本的產物
+    for candidate in "dist/dex2pc-$version-1"*.x86_64.rpm; do
         [ -f "$candidate" ] && rpm=$candidate
     done
 fi

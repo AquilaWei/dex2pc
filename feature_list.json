@@ -77,7 +77,7 @@
         "workflow 只用內建的 GITHUB_TOKEN，不需要任何另外設定的 secret；使用 Public repo 免費的 GitHub-hosted runner，不依賴 self-hosted runner",
         "workflow 通過 `actionlint`（有裝時）；實際發佈只能在推 tag 後於 GitHub 驗證，列入需要使用者操作的清單"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F5",

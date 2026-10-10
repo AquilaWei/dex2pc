@@ -9,6 +9,7 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 | `rpm/` | `dex2pc.spec`、`dex2pc.rpmlintrc`；用 `build-rpm.sh` 建置 |
 | `deb/` | `copyright`；用 `build-deb.sh` 建置 |
 | `smoke-test.sh` | 在 Fedora 容器內安裝 rpm 並啟動驗證 |
+| `check-tag.sh`、`release-notes.sh` | 發佈流程用：確認 tag 是 `vX.Y.0` 且和 `Cargo.toml` 一致；從 `CHANGELOG.md` 取出該版本的段落當 Release notes |
 | `smoke-test-deb.sh` | 在 Debian / Ubuntu 容器內安裝 deb 並啟動驗證（`<映像>` 參數） |
 
 輸出一律放到專案根目錄的 `dist/`（已被 git 忽略）。
@@ -47,6 +48,18 @@ packaging/smoke-test-deb.sh ubuntu:26.04
 - 沒有 podman / docker、拉不到映像或連不到套件倉庫時，本機印出原因並 exit 0（略過）；設了 `CI` 環境變數則失敗。
 - `lintian`（Debian 13 容器內）對這個 deb 沒有 error，只剩一個 warning：`no-manual-page`（沒有 man page）。
   這次用它檢查時抓到 `changelog.Debian.gz` 的檔名不符 native 套件規則，已改為 `changelog.gz`。lintian 目前沒有放進腳本或 CI。
+
+## CI 與發佈（`.github/workflows/`）
+
+| 檔案 | 觸發 | 做什麼 |
+|------|------|--------|
+| `ci.yml` | 每次 push（任何分支）與 PR，也被 `release.yml` 重用 | actionlint → fmt、clippy、完整 `cargo test` → 建 rpm 與 deb（含 lintian）並上傳 artifact → 用這份 artifact 跑 rpm（Fedora）、deb（Debian 13、Ubuntu 26.04）三個煙霧測試 |
+| `release.yml` | 只有 `v*.*.0` 的 tag | 確認 tag 和 `Cargo.toml` 版號一致 → 呼叫 `ci.yml` → 全部綠燈才建立 GitHub Release，附 rpm、deb、各自的 `.sha256`，notes 取自 CHANGELOG |
+
+- **PATCH 版（`X.Y.Z`，Z 不為 0）不打 tag、不發佈**，但每次 push 都會跑 `ci.yml`，所以 PATCH 版的 rpm 與 deb 在該次 run 的 artifact 裡。
+- 只用內建的 `GITHUB_TOKEN`，沒有任何另外設定的 secret；全部跑在 GitHub-hosted 的 `ubuntu-latest`。`contents: write` 只給 release 那個 job。
+- CI 的 runner 是 Ubuntu，rpm 用 apt 的 `rpm`／`rpmlint` 建置；本機是 Fedora。兩邊的 `rpmlint` 版本可能不同。
+- 發佈步驟：改 `Cargo.toml` 版號與 CHANGELOG → commit → `git tag vX.Y.0 && git push origin vX.Y.0`。
 
 ## 建置方式的選擇
 

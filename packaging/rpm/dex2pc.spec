@@ -5,6 +5,11 @@
 # Rust 的 binary 沒有 rpm 需要的 build-id 之外的除錯資訊，不另外產生 debuginfo 套件
 %global debug_package %{nil}
 
+# 非 Fedora 的 rpm（例如 CI 的 Ubuntu 上用 apt 裝的 rpmbuild）預設會把文件與授權檔放進帶版號的目錄、
+# 並產生 /usr/lib/.build-id；這裡固定成和 Fedora 一樣，讓各處建出來的 rpm 內容相同
+%global _docdir_fmt %{name}
+%global _build_id_links none
+
 Name:           dex2pc
 Version:        %{dex2pc_version}
 Release:        1%{?dist}
