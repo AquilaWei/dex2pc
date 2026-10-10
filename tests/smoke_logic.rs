@@ -292,3 +292,29 @@ fn inner_exits_77_when_copr_server_answers_http_503() {
 
     assert_eq!(output.status.code(), Some(77), "{output:?}");
 }
+
+#[test]
+fn inner_exits_77_when_copr_connection_is_unreachable() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "copr.fedorainfracloud.org: Network is unreachable",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}
+
+#[test]
+fn inner_exits_77_when_copr_connection_times_out() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "copr.fedorainfracloud.org: Connection timed out after 30001 milliseconds",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}
