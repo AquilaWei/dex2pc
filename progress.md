@@ -133,3 +133,8 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 測試 `tests/rpm_contents.rs`（6 個）共用一次 build-rpm.sh，用 rpm/rpm2cpio 檢查檔案、相依、packaged 的 .desktop 與 rpmlint；缺工具時本機略過，設了 `CI` 就失敗。
   - **rpmlint 本機沒裝**，我裝在 /tmp/rl 的 venv（`pip install rpmlint`，不在 repo 內）驗證；CI 需要安裝 rpmlint。
   - 下一步：F3（Fedora 容器煙霧測試，需 COPR）或 deb 軌道 F8。
+- **F2 審查修正**：新增 `tests/common/mod.rs` 的 `require_tools`（只查 PATH、不執行工具）；build 相關測試先確認 rpmbuild、
+  desktop-file-validate（spec 的 `%check`）、git、tar、cargo、rpm、rpm2cpio、cpio 都在，本機缺工具就略過、設了 `CI` 就失敗。
+  解包函式 `extract_rpm` 同時檢查 rpm2cpio 與 cpio 的退出狀態（壞掉的 rpm 會讓 cpio 讀到空輸入而成功），有回歸測試。
+  共用的 build 產物改放在每個測試程式專屬的 tempdir，由 static fixture 持有；不再使用固定的 `target/rpm-contents-dist`，也沒有吞掉的清理錯誤。
+  取捨：static 不會 drop，暫存目錄（約 1 MB）留在系統暫存區由 OS 清理。

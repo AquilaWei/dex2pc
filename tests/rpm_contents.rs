@@ -2,42 +2,62 @@
 //! 整組測試共用同一次 build-rpm.sh（約 20 秒）；缺工具時本機略過，設了 `CI` 就失敗。
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
+
+mod common;
+use common::require_tools;
 
 const ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
-fn run(program: &str, args: &[&str]) -> Option<Output> {
-    match Command::new(program).args(args).current_dir(ROOT).output() {
-        Ok(output) => Some(output),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            assert!(std::env::var_os("CI").is_none(), "CI 需要安裝 {program}");
-            eprintln!("{program} 不存在，略過");
-            None
-        }
-        Err(err) => panic!("{err}"),
-    }
+fn run(program: &str, args: &[&str]) -> Output {
+    Command::new(program)
+        .args(args)
+        .current_dir(ROOT)
+        .output()
+        .unwrap()
+}
+
+/// 本次測試程式專屬的 build 產物。放在 static 裡，所以暫存目錄活到測試程式結束
+/// （static 不會 drop，目錄留在系統暫存區由 OS 清；每個測試程式各有自己的目錄，互不干擾）。
+struct Built {
+    _dist: tempfile::TempDir,
+    rpm: PathBuf,
 }
 
 /// 建一次 rpm 並在整個測試程式內共用；工具缺少時回傳 `None`。
 fn built_rpm() -> Option<&'static Path> {
-    static RPM: OnceLock<Option<PathBuf>> = OnceLock::new();
-    RPM.get_or_init(|| {
-        run("rpmbuild", &["--version"])?;
-        // 放在 target/ 底下（已被 git 忽略），不碰使用者的 dist/
-        let dist = Path::new(ROOT).join("target/rpm-contents-dist");
-        let _ = std::fs::remove_dir_all(&dist);
-        let output = Command::new("sh")
-            .arg("packaging/build-rpm.sh")
-            .current_dir(ROOT)
-            .env("DEX2PC_DIST_DIR", &dist)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        Some(PathBuf::from(stdout.lines().last().unwrap()))
-    })
-    .as_deref()
+    static BUILT: OnceLock<Option<Built>> = OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            // build-rpm.sh 用到 git、tar、cargo、rpmbuild，spec 的 %check 用到 desktop-file-validate，
+            // 這個檔案的其他測試還會用 rpm、rpm2cpio、cpio
+            if !require_tools(&[
+                "rpmbuild",
+                "desktop-file-validate",
+                "git",
+                "tar",
+                "cargo",
+                "rpm",
+                "rpm2cpio",
+                "cpio",
+            ]) {
+                return None;
+            }
+            let dist = tempfile::tempdir().unwrap();
+            let output = Command::new("sh")
+                .arg("packaging/build-rpm.sh")
+                .current_dir(ROOT)
+                .env("DEX2PC_DIST_DIR", dist.path())
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            let rpm = PathBuf::from(stdout.lines().last().unwrap());
+            Some(Built { _dist: dist, rpm })
+        })
+        .as_ref()
+        .map(|built| built.rpm.as_path())
 }
 
 fn rpm_query(args: &[&str]) -> Option<String> {
@@ -45,7 +65,7 @@ fn rpm_query(args: &[&str]) -> Option<String> {
     let mut full: Vec<&str> = vec!["-qp"];
     full.extend_from_slice(args);
     full.push(rpm.to_str().unwrap());
-    let output = run("rpm", &full)?;
+    let output = run("rpm", &full);
     assert!(output.status.success(), "{output:?}");
     Some(String::from_utf8(output.stdout).unwrap())
 }
@@ -99,18 +119,53 @@ fn rpm_does_not_merely_recommend_scrcpy() {
     assert_eq!(recommends, "");
 }
 
+/// 把 `rpm` 解到 `dest`。`rpm2cpio` 與 `cpio` 兩個行程都要成功，只看 cpio 的話
+/// 壞掉的 rpm（rpm2cpio 失敗、cpio 讀到空輸入）會被當成成功。
+fn extract_rpm(rpm: &Path, dest: &Path) -> Result<(), String> {
+    let mut rpm2cpio = Command::new("rpm2cpio")
+        .arg(rpm)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("rpm2cpio 啟動失敗：{err}"))?;
+    let cpio = Command::new("cpio")
+        .args(["-id", "--quiet"])
+        .current_dir(dest)
+        .stdin(rpm2cpio.stdout.take().unwrap())
+        .status()
+        .map_err(|err| format!("cpio 啟動失敗：{err}"))?;
+    let rpm2cpio = rpm2cpio
+        .wait()
+        .map_err(|err| format!("等待 rpm2cpio 失敗：{err}"))?;
+    if !rpm2cpio.success() {
+        return Err(format!("rpm2cpio 失敗：{rpm2cpio}"));
+    }
+    if !cpio.success() {
+        return Err(format!("cpio 失敗：{cpio}"));
+    }
+    Ok(())
+}
+
 /// 把建好的 rpm 解到暫存目錄，回傳目錄；rpm 不存在時回傳 `None`。
 fn extract_built_rpm() -> Option<tempfile::TempDir> {
     let rpm = built_rpm()?;
     let extract = tempfile::tempdir().unwrap();
-    let status = Command::new("sh")
-        .args(["-c", r#"rpm2cpio "$1" | cpio -id --quiet"#, "sh"])
-        .arg(rpm)
-        .current_dir(extract.path())
-        .status()
-        .unwrap();
-    assert!(status.success());
+    extract_rpm(rpm, extract.path()).unwrap();
     Some(extract)
+}
+
+#[test]
+fn extract_rpm_fails_when_rpm2cpio_fails_even_if_cpio_succeeds() {
+    if !require_tools(&["rpm2cpio", "cpio"]) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let not_an_rpm = dir.path().join("broken.rpm");
+    std::fs::write(&not_an_rpm, b"this is not an rpm").unwrap();
+
+    let result = extract_rpm(&not_an_rpm, dir.path());
+
+    assert!(result.is_err(), "{result:?}");
 }
 
 #[test]
@@ -122,9 +177,7 @@ fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
 
     let content = std::fs::read_to_string(&desktop).unwrap();
     assert!(content.lines().any(|line| line == "Exec=dex2pc start"));
-    let Some(validate) = run("desktop-file-validate", &[desktop.to_str().unwrap()]) else {
-        return;
-    };
+    let validate = run("desktop-file-validate", &[desktop.to_str().unwrap()]);
     assert!(validate.status.success(), "{validate:?}");
 }
 
@@ -178,16 +231,17 @@ fn rpmlint_reports_no_errors_with_project_filters() {
         return;
     };
 
-    let Some(output) = run(
+    if !require_tools(&["rpmlint"]) {
+        return;
+    }
+    let output = run(
         "rpmlint",
         &[
             "-r",
             "packaging/rpm/dex2pc.rpmlintrc",
             rpm.to_str().unwrap(),
         ],
-    ) else {
-        return;
-    };
+    );
 
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();

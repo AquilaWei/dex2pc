@@ -4,7 +4,20 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
+mod common;
+use common::require_tools;
+
 const ROOT: &str = env!("CARGO_MANIFEST_DIR");
+
+/// build-rpm.sh 用到 git、tar、cargo、rpmbuild，spec 的 %check 用到 desktop-file-validate，測試本身會用 rpm
+const BUILD_TOOLS: &[&str] = &[
+    "rpmbuild",
+    "desktop-file-validate",
+    "git",
+    "tar",
+    "cargo",
+    "rpm",
+];
 
 /// 在專案根目錄執行 `program`；程式不存在時回傳 `None`（本機略過，CI 失敗）。
 fn run_in_root(program: &str, args: &[&str]) -> Option<Output> {
@@ -102,7 +115,7 @@ fn spec_targets_only_x86_64() {
 
 #[test]
 fn build_script_produces_rpm_named_after_cargo_toml_version() {
-    if run_in_root("rpmbuild", &["--version"]).is_none() {
+    if !require_tools(BUILD_TOOLS) {
         return;
     }
     let Some(output) = run_in_root("sh", &["packaging/build-rpm.sh"]) else {
@@ -127,7 +140,7 @@ fn build_script_produces_rpm_named_after_cargo_toml_version() {
 
 #[test]
 fn build_script_lists_only_the_rpm_it_just_built() {
-    if run_in_root("rpmbuild", &["--version"]).is_none() {
+    if !require_tools(BUILD_TOOLS) {
         return;
     }
     let dist = tempfile::tempdir().unwrap();
@@ -153,7 +166,7 @@ fn build_script_lists_only_the_rpm_it_just_built() {
 
 #[test]
 fn build_script_succeeds_when_cargo_target_dir_points_elsewhere() {
-    if run_in_root("rpmbuild", &["--version"]).is_none() {
+    if !require_tools(BUILD_TOOLS) {
         return;
     }
     let target = tempfile::tempdir().unwrap();
