@@ -211,6 +211,34 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     );
 }
 
+#[test]
+fn start_dry_run_with_keyboard_sdk_in_config_passes_keyboard_sdk() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "keyboard = 'sdk'\n").unwrap();
+    // 設定檔可把預設的 uhid 改回 sdk，CHANGELOG 有承諾這點
+    let empty_path = tempfile::tempdir().unwrap();
+
+    let output = dex2pc()
+        .args([
+            "start",
+            "--dry-run",
+            "--serial",
+            "R5CW1234ABC",
+            "--no-audio",
+        ])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("PATH", empty_path.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+    );
+}
+
 /// F8 結論：實機確認 DeX 不需要改 adb settings，dex2pc 不得在啟動時呼叫 `adb settings`。
 /// 假的 adb / scrcpy 把每次呼叫寫進同一份 log；未預期的 adb 呼叫（含 settings）會讓 adb 失敗。
 #[test]
