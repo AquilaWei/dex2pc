@@ -52,7 +52,7 @@
         "progress.md 或 packaging/README.md 記錄 deb 所需的對應：control 的 Depends（adb、scrcpy 在 Debian/Ubuntu 的套件名稱）、建置方式候選（cargo-deb 或 dpkg-deb）、可重用的共用檔",
         "`dpkg-deb -I` 顯示的 Version 等於 Cargo.toml 的 version，Architecture 為 amd64，Depends 含 `android-tools-adb` 與 `scrcpy (>= 3.2)`（強制相依，與 rpm 一致；下限需與 dex2pc 程式內檢查的 scrcpy 最低版本相同）"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F9",

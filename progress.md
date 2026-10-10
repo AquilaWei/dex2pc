@@ -165,3 +165,13 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
 - **F3 審查修正（curl 22）**：`Curl error (22)` 不再單獨當成一般失敗的證據（它只代表 HTTP 回應是錯誤，4xx 與 5xx 都會有）；
   改由實際的 HTTP 狀態決定：4xx 仍優先判為失敗，5xx 仍判為連線問題（77）。新增「完整下載錯誤＋curl 22＋503 → 77」與
   「curl 22 沒有 HTTP 狀態 → 1」兩個測試（共 28 個），前者在舊邏輯下失敗。
+
+- **F8 完成**（2026-10-10）：`packaging/build-deb.sh`（dpkg-deb、`--root-owner-group`、xz）、`packaging/deb/copyright`（DEP-5，指向 common-licenses 的 Apache-2.0）、
+  `packaging/README.md`（deb 的對應表與建置工具選擇）、`tests/deb.rs`（11 個）。
+  - 先修了 `version.sh` 對 CRLF `Cargo.toml` 的問題（獨立 commit），因為 deb 腳本也靠它取版號。
+  - deb：`dex2pc_<版號>_amd64.deb`，Version 就是 Cargo.toml 的版號（沒有 Debian revision）；`Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= 3.2)`；
+    裝 `/usr/bin/dex2pc`、`/usr/share/applications/dex2pc.desktop`（共用檔）、README、copyright、changelog.Debian.gz；檔案擁有者 root/root。
+  - scrcpy 下限現在在三處（`src/doctor.rs`、rpm spec、`build-deb.sh` 的 `min_scrcpy`），`tests/deb.rs` 檢查 doctor 與 build-deb.sh 一致，rpm 的由 `tests/rpm_contents.rs` 檢查。
+  - **尚未驗證**：deb 沒有在真實 Debian 13／Ubuntu 26.04 上安裝過（F9 做）；lintian 本機沒裝，沒跑；`libc6` 沒有版本下限（沒有 dpkg-shlibdeps）。
+  - 本機實跑：`dpkg-deb -I/-c` 欄位與內容正確；把 scrcpy 改成 Recommends 的變異測試會讓 2 個測試失敗。
+  - 下一步：F9（Debian／Ubuntu 容器煙霧測試）；rpm 軌道剩 F5（文件）。
