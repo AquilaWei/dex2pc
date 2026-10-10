@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 新增
+
+- **Fedora 的 rpm 安裝包**（x86_64）：`sudo dnf copr enable zeno/scrcpy` 後 `sudo dnf install ./dex2pc-*.rpm` 就能裝好，會自動帶入 adb 與 scrcpy，並附上應用程式選單的捷徑，不必再跑 `dex2pc install-desktop`；移除用 `sudo dnf remove dex2pc`。也可以用 `packaging/build-rpm.sh` 從原始碼自己建
+- 每次推送程式碼時，GitHub 都會自動建置 rpm 與 deb 並做安裝測試；只有 MINOR 以上的版本（`X.Y.0`）才會發佈 Release 並附上 SHA256 檢查碼，PATCH 版只留在 CI 的 artifact
+
 ### 修正
 
 - `dex2pc doctor` / `start` 要求的 scrcpy 最低版本由 3.0 改為 **3.2**：DeX 視窗用到的 `--display-ime-policy` 從 3.2 才有，舊版會在檢查通過後才啟動失敗；現在會在檢查階段就提示更新

@@ -97,3 +97,55 @@ fn version_is_zero_x_test_release() {
     // F10：版號進 0.x 測試版，1.0 之前由使用者決定何時升 MAJOR
     assert!(env!("CARGO_PKG_VERSION").starts_with("0."));
 }
+
+#[test]
+fn readme_install_section_has_copyable_rpm_commands_with_copr_first() {
+    let install = section(README, "\n## 安裝\n");
+
+    let copr = install.find("sudo dnf copr enable zeno/scrcpy").unwrap();
+    let rpm = install.find("sudo dnf install ./dex2pc-*.rpm").unwrap();
+    assert!(copr < rpm, "COPR 要先於安裝 rpm");
+}
+
+#[test]
+fn readme_install_section_says_rpm_is_fedora_x86_64_only_and_fails_without_copr() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("只支援 Fedora（x86_64）"));
+    assert!(install.contains("沒有啟用 COPR 就安裝會失敗"));
+}
+
+#[test]
+fn readme_install_section_explains_rpm_ships_the_menu_shortcut_unlike_cargo_install() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("不必再跑 `dex2pc install-desktop`"));
+    assert!(install.contains("cargo install --path ."));
+}
+
+#[test]
+fn readme_install_section_documents_building_the_rpm_and_removing_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo dnf install rpm-build cargo rust desktop-file-utils git tar"));
+    assert!(install.contains("packaging/build-rpm.sh"));
+    assert!(install.contains("sudo dnf remove dex2pc"));
+}
+
+#[test]
+fn readme_install_section_says_patch_versions_are_artifacts_only() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("PATCH 版"));
+    assert!(install.contains("不發佈 Release"));
+    assert!(install.contains("artifact"));
+}
+
+#[test]
+fn changelog_unreleased_announces_the_rpm_package_in_plain_words() {
+    let unreleased = section(CHANGELOG, "\n## [Unreleased]\n");
+
+    assert!(unreleased.contains("### 新增"));
+    assert!(unreleased.contains("rpm 安裝包"));
+    assert!(unreleased.contains("sudo dnf remove dex2pc"));
+}

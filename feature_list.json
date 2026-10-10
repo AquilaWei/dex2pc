@@ -90,7 +90,7 @@
         "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過",
         "README 說明 PATCH 版只提供 CI 產出的 artifact，不發佈 Release；正式安裝包取自 MINOR 以上版本的 Release"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F10",

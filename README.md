@@ -48,14 +48,48 @@ flowchart LR
 
 ## 安裝
 
+兩種方式擇一：**rpm 安裝包**（Fedora x86_64，建議）或 **`cargo install`**（從原始碼）。
+
+### 方式一：rpm 安裝包（Fedora x86_64）
+
+rpm **只支援 Fedora（x86_64）**。套件強制相依 `android-tools` 與 `scrcpy >= 3.2`，而 Fedora 官方倉庫沒有夠新的 scrcpy，所以要**先啟用 COPR**：
+
+```bash
+sudo dnf copr enable zeno/scrcpy
+sudo dnf install ./dex2pc-*.rpm
+```
+
+- **沒有啟用 COPR 就安裝會失敗**：dnf 會回報找不到 `scrcpy >= 3.2`，先執行上面第一行再重試
+- rpm 從 [GitHub Releases](../../releases) 下載，旁邊的 `.sha256` 檔可用 `sha256sum -c dex2pc-*.rpm.sha256` 檢查下載有沒有損壞
+- **正式安裝包只來自 MINOR 以上的版本（`vX.Y.0`）的 Release**；PATCH 版（`X.Y.Z`，Z 不為 0）不發佈 Release，只有 CI 每次建置時上傳的 artifact（GitHub Actions 該次執行頁面的 Artifacts），供測試用
+- 與 `cargo install` 的差別：rpm 會把應用程式選單的**捷徑一併裝好**（`/usr/share/applications/dex2pc.desktop`），**不必再跑 `dex2pc install-desktop`**；dex2pc 裝在 `/usr/bin/dex2pc`，不需要 Rust
+- 移除：
+
+```bash
+sudo dnf remove dex2pc
+```
+
+**從原始碼自己建 rpm**（例如要裝 PATCH 版，或修改過程式碼）：
+
+```bash
+sudo dnf install rpm-build cargo rust desktop-file-utils git tar
+packaging/build-rpm.sh                 # 產出 dist/dex2pc-<版號>-1.<dist>.x86_64.rpm
+sudo dnf copr enable zeno/scrcpy
+sudo dnf install ./dist/dex2pc-*.rpm
+```
+
+打包的細節見 [`packaging/README.md`](packaging/README.md)。
+
+### 方式二：`cargo install`
+
 ```bash
 cargo install --path .     # 編譯並安裝到 ~/.cargo/bin/dex2pc
 dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX」捷徑
 ```
 
-`~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。
+`~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。adb 與 scrcpy 要自己裝，見上面的「需求」。
 
-**應用程式選單捷徑**：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
+**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
 
 - 捷徑記錄的是**執行指令當下的 dex2pc 絕對路徑**，所以請在 `cargo install` 之後用 `dex2pc install-desktop` 建立，不要用 `cargo run`（會指向 `target/` 裡的檔案）
 - 重複執行只會覆寫同一個檔案；移除用 **`dex2pc install-desktop --uninstall`**
