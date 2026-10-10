@@ -2,7 +2,7 @@
   "features": [
     {
       "id": "F1",
-      "description": "建立 packaging/rpm/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64，Fedora）；Version 由 Cargo.toml 讀取，不另外寫死；打包檔依格式分目錄（packaging/rpm/），共用檔（.desktop）放 packaging/common/，之後要加 deb 時不必搬動",
+      "description": "建立 packaging/rpm/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64，Fedora）；Version 由 Cargo.toml 讀取，不另外寫死；打包檔依格式分目錄（packaging/rpm/），共用檔（.desktop）放 packaging/common/，deb 也沿用同一套結構（packaging/deb/）",
       "steps": [
         "`packaging/build-rpm.sh` 在乾淨的 checkout 上執行後，於 `dist/` 產出 `dex2pc-<Cargo.toml 版號>-1.*.x86_64.rpm`",
         "`rpmspec -P packaging/rpm/dex2pc.spec` 可解析且無錯誤",
@@ -37,19 +37,40 @@
       "passes": false
     },
     {
-      "id": "F4",
-      "description": "GitHub Actions：push/PR 時跑 verify 並建置 rpm，推 vX.Y.Z tag 時建置 rpm、附 SHA256、發佈到 GitHub Release",
+      "id": "F8",
+      "description": "deb 可行性筆記（只寫文件，不建 deb）：評估之後加 deb 要改哪些地方，確認目前的 packaging 目錄結構與版號來源不需要重做",
       "steps": [
-        ".github/workflows 的 PR 流程跑 fmt、clippy、test、build-rpm 與 smoke-test 並上傳 rpm artifact",
+        "progress.md 或 packaging/README.md 記錄 deb 所需的對應：control 的 Depends（adb、scrcpy 在 Debian/Ubuntu 的套件名稱）、建置方式候選（cargo-deb 或 dpkg-deb）、可重用的共用檔",
+        "文件明列「deb 不在本次範圍」，且不新增任何 deb 建置腳本或 CI job"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F9",
+      "description": "在 Debian/Ubuntu 容器內安裝 deb 並做啟動驗證",
+      "steps": [
+        "`packaging/smoke-test-deb.sh` 在指定的 debian/ubuntu 容器內用 `apt install ./dex2pc_*.deb` 安裝成功（相依 scrcpy 的來源依 questions 的答案處理）",
+        "容器內 `dex2pc --version` 輸出 Cargo.toml 的版號",
+        "容器內 `dex2pc doctor` 能執行並回報沒有手機（不 crash）；其安裝提示仍是 Fedora 指令，README 需註明",
+        "`apt remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
+        "沒有容器引擎時本機明確略過（exit 0）；CI 一定要跑"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F4",
+      "description": "GitHub Actions：push/PR 時跑 verify 並建置 rpm 與 deb，推 vX.Y.Z tag 時建置 rpm 與 deb、附 SHA256，發佈到 GitHub Release",
+      "steps": [
+        ".github/workflows 的 PR 流程跑 fmt、clippy、test、build-rpm、build-deb 與兩種煙霧測試，並上傳 rpm 與 deb artifact",
         "tag `vX.Y.Z` 與 Cargo.toml 版號不一致時 workflow 失敗",
-        "release 流程在 CI 綠燈後才建立 Release，附 rpm 與 `.sha256` 檔，release notes 取自 CHANGELOG 對應版本",
+        "release 流程在 CI 綠燈後才建立 Release，附 rpm、deb 與各自的 `.sha256` 檔，release notes 取自 CHANGELOG 對應版本",
         "workflow 通過 `actionlint`（有裝時）；實際發佈只能在推 tag 後於 GitHub 驗證，列入需要使用者操作的清單"
       ],
       "passes": false
     },
     {
       "id": "F5",
-      "description": "文件同步：README 加入 rpm 安裝方式與移除方式、CHANGELOG 記錄、版號相關 badge 一致",
+      "description": "文件同步（rpm 部分）：README 加入 rpm 安裝與移除方式、CHANGELOG 記錄、版號相關 badge 一致",
       "steps": [
         "README 的「安裝」段落有可直接複製的指令：先 `sudo dnf copr enable zeno/scrcpy`，再 `sudo dnf install ./dex2pc-*.rpm`，並說明與 `cargo install` 的差別（rpm 的捷徑由套件提供，不必再跑 install-desktop）",
         "README 說明 rpm 只支援 Fedora（x86_64）；沒有啟用 COPR 時 dnf 會因為找不到 scrcpy 而失敗，要寫明",
@@ -60,20 +81,23 @@
       "passes": false
     },
     {
-      "id": "F6",
-      "description": "需要實機驗收的清單：在真實 Fedora 主機安裝 rpm 並接手機確認 DeX 視窗與應用程式選單捷徑",
+      "id": "F10",
+      "description": "文件同步（deb 部分）：README 加入 deb 安裝與移除方式、支援的 Debian/Ubuntu 版本、自建 deb 的步驟，CHANGELOG 記錄",
       "steps": [
-        "README 或 progress.md 列出實機驗收項目：dnf 安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、dnf remove 後捷徑消失",
-        "此功能由使用者實機確認後才可標為完成，不假裝已測過"
+        "README 的「安裝」段落有可直接複製的 `sudo apt install ./dex2pc_*.deb`，並說明 scrcpy 在 Debian/Ubuntu 的取得方式與最低版本",
+        "README 說明 `doctor` 的安裝提示目前只列 Fedora 指令，Debian/Ubuntu 使用者請照 README 安裝",
+        "README 說明從原始碼自建 deb 的步驟與移除方式 `sudo apt remove dex2pc`",
+        "CHANGELOG [Unreleased] 記錄新增 deb 安裝包",
+        "版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過"
       ],
       "passes": false
     },
     {
-      "id": "F8",
-      "description": "deb 可行性筆記（只寫文件，不建 deb）：評估之後加 deb 要改哪些地方，確認目前的 packaging 目錄結構與版號來源不需要重做",
+      "id": "F6",
+      "description": "需要實機驗收的清單：在真實 Fedora 主機安裝 rpm、在真實 Debian/Ubuntu 主機安裝 deb，接手機確認 DeX 視窗與應用程式選單捷徑",
       "steps": [
-        "progress.md 或 packaging/README.md 記錄 deb 所需的對應：control 的 Depends（adb、scrcpy 在 Debian/Ubuntu 的套件名稱）、建置方式候選（cargo-deb 或 dpkg-deb）、可重用的共用檔",
-        "文件明列「deb 不在本次範圍」，且不新增任何 deb 建置腳本或 CI job"
+        "README 或 progress.md 列出實機驗收項目：rpm 與 deb 各自的安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失",
+        "此功能由使用者實機確認後才可標為完成，不假裝已測過"
       ],
       "passes": false
     }
@@ -81,11 +105,18 @@
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
   "questions": [
     {
-      "question": "deb 打算怎麼處理？",
+      "question": "deb 支援哪些版本？Debian/Ubuntu 倉庫的 scrcpy 多半低於 dex2pc 需要的 3.2",
       "options": [
-        "先只做 rpm，deb 記成後續功能（F8 只寫評估筆記）",
-        "現在就加一個 deb 建置功能（Debian/Ubuntu）",
-        "完全不做 deb，F8 也拿掉"
+        "Debian 13（trixie）與 Ubuntu 26.04 以上，scrcpy 不夠新時於 README 說明如何取得",
+        "Ubuntu 24.04 LTS 與 Debian 13，並要求使用者自行安裝新版 scrcpy（snap 或官方 release）",
+        "只列最新版，不保證舊版"
+      ]
+    },
+    {
+      "question": "deb 的 Depends 要怎麼處理 scrcpy？",
+      "options": [
+        "Depends: scrcpy (>= 3.2) 強制相依，與 rpm 一致",
+        "Recommends: scrcpy，不強制（舊版倉庫的 scrcpy 太舊時仍可安裝）"
       ]
     }
   ]

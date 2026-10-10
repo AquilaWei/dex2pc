@@ -17,7 +17,7 @@
 ## 計畫
 
 F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
-→ F4 GitHub Actions 建置與發佈（SHA256）→ F5 README/CHANGELOG → F6 實機驗收清單 → F8 deb 評估筆記（只寫文件）。
+→ F4 GitHub Actions 建置與發佈（SHA256）→ F5 README/CHANGELOG → F8 deb 建置 → F9 Debian/Ubuntu 容器煙霧測試 → F4 CI 與發佈（rpm+deb）→ F5 rpm 文件 → F10 deb 文件 → F6 實機驗收。
 
 ## 使用者回覆（2026-10-10）
 
@@ -41,6 +41,14 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
 - repo 內容：主 checkout 現在有 `master` 分支，含完整程式（Cargo.toml 0.2.0 等）。已把 master 併進本分支（見下方），
   master 上舊專案的 feature_list.json / progress.md 衝突時以本計畫為準，舊內容留在 git 歷史。
 
+## 使用者回覆（第三輪）
+
+- deb：**現在就做**（Debian/Ubuntu）。F8 由「評估筆記」改為真正的 deb 建置，新增 F9（deb 容器煙霧測試）、F10（deb 文件）；
+  F4 的 CI 與發佈同時涵蓋 rpm 與 deb，F6 實機驗收加上 Debian/Ubuntu。
+- 建置方式：`dpkg-deb` 組出檔案樹（不新增 crate；與 rpm 一樣用平台原生工具），與 rpm 共用 `packaging/common/`。
+- 仍只限 x86_64/amd64；`doctor` 提示維持只列 Fedora 指令，deb 使用者靠 README。
+- 風險：Debian/Ubuntu 倉庫的 scrcpy 多半低於 3.2（dex2pc 目前要求 3.2 以上），相依與支援版本見 questions。
+
 ## 決策與理由
 
 - `rpmbuild` + 自寫 spec（使用者已確認）。
@@ -52,7 +60,7 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
 
 ## 給下一個 session
 
-1. 先確認 questions 的答案（目前只剩 deb 的處理方式），尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
+1. 先確認 questions 的答案（deb 支援版本與 scrcpy 相依），尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
 2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
