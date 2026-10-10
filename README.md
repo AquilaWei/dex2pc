@@ -103,18 +103,18 @@ dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX�
 3. 執行：
 
 ```bash
-cargo run --release -- start
+dex2pc start
 ```
 
-（已用 `cargo install --path .` 安裝時直接執行 **`dex2pc start`**。）
+（用 rpm 或 `cargo install` 安裝後都是直接執行 `dex2pc`；還沒安裝、在原始碼目錄裡試用時，把 `dex2pc` 換成 `cargo run --release --`，見「[建置與執行](#建置與執行)」。）
 
 `start` 會先做和 `doctor` 一樣的檢查，全部通過才以虛擬顯示器開啟 **Samsung DeX** 視窗；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
-有問題時照畫面上的訊息處理，或先跑 `cargo run -- doctor` 看完整檢查結果。
+有問題時照畫面上的訊息處理，或先跑 `dex2pc doctor` 看完整檢查結果。
 
 ```bash
-cargo run -- start --dry-run               # 只印出會執行的 scrcpy 指令，不連手機
-cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
-cargo run -- start --watch                 # 拔線或斷線後，手機接回來自動重新開啟視窗
+dex2pc start --dry-run                     # 只印出會執行的 scrcpy 指令，不連手機
+dex2pc start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
+dex2pc start --watch                       # 拔線或斷線後，手機接回來自動重新開啟視窗
 ```
 
 **`--watch` 自動重連**：scrcpy 因手機斷線結束時，dex2pc 會等手機重新接上，再自動開啟視窗。
@@ -136,6 +136,8 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
 
 ## 建置與執行
+
+以下是**開發用**：在原始碼目錄裡用 `cargo run` 直接執行（已安裝的使用者把 `cargo run --` 換成 `dex2pc` 即可，不需要 Rust）。
 
 ```bash
 cargo build --release

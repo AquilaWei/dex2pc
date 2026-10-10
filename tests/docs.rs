@@ -133,23 +133,19 @@ fn readme_install_section_documents_building_the_rpm_and_removing_it() {
 }
 
 #[test]
-fn readme_rpm_build_command_installs_every_buildrequires_and_build_rpm_tool() {
-    // 建置步驟的 dnf 指令要涵蓋 spec 的 BuildRequires（build-rpm.sh 在 cargo 來自 rpm 時會檢查）與腳本用到的 git、tar
-    let spec = include_str!("../packaging/rpm/dex2pc.spec");
+fn readme_rpm_build_command_installs_the_tools_the_build_needs() {
+    // 預期的套件寫死：spec 的 BuildRequires（cargo、rust、desktop-file-utils）加上 build-rpm.sh 用到的 rpm-build、git、tar
     let line = install_line(README, "sudo dnf install rpm-build");
     let installed: Vec<&str> = line.split_whitespace().collect();
 
-    for name in spec
-        .lines()
-        .filter_map(|line| line.strip_prefix("BuildRequires:"))
-        .filter_map(|rest| rest.split_whitespace().next())
-    {
-        assert!(
-            installed.contains(&name),
-            "{name} 不在 README 的指令：{line}"
-        );
-    }
-    for tool in ["rpm-build", "git", "tar"] {
+    for tool in [
+        "rpm-build",
+        "cargo",
+        "rust",
+        "desktop-file-utils",
+        "git",
+        "tar",
+    ] {
         assert!(
             installed.contains(&tool),
             "{tool} 不在 README 的指令：{line}"
@@ -162,6 +158,29 @@ fn install_line<'a>(doc: &'a str, prefix: &str) -> &'a str {
     doc.lines()
         .find(|line| line.starts_with(prefix))
         .unwrap_or_else(|| panic!("找不到以 {prefix} 開頭的行"))
+}
+
+#[test]
+fn readme_quick_start_uses_the_installed_dex2pc_command_not_cargo_run() {
+    let quick_start = section(README, "\n## 快速開始\n");
+
+    assert!(quick_start.contains("dex2pc start\n"));
+    assert!(quick_start.contains("dex2pc doctor"));
+    assert!(quick_start.contains("dex2pc start --dry-run"));
+    assert!(quick_start.contains("dex2pc start --watch"));
+    assert!(
+        !quick_start.contains("cargo run -- start")
+            && !quick_start.contains("cargo run --release -- start")
+    );
+    assert!(!quick_start.contains("cargo run -- doctor"));
+}
+
+#[test]
+fn readme_keeps_cargo_run_in_the_development_section() {
+    let development = section(README, "\n## 建置與執行\n");
+
+    assert!(development.contains("開發用"));
+    assert!(development.contains("cargo run -- doctor"));
 }
 
 #[test]

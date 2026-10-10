@@ -204,3 +204,4 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 測試：`tests/docs.rs` +6（指令順序、Fedora only／失敗說明、捷徑差異、自建與移除、PATCH 版、CHANGELOG）。
   - README 的 GitHub Releases 連結用相對路徑 `../../releases`（沒有 git remote 可確認實際網址）。
   - 下一步：F10（deb 文件）、F6（實機驗收）。
+  - F5 審查修正：「快速開始」與 doctor／參數範例改成安裝後可直接用的 `dex2pc …`（rpm 使用者不需要 Rust），`cargo run` 只留在「建置與執行」（標明開發用）；建置指令的測試改成寫死 `rpm-build cargo rust desktop-file-utils git tar`，不再從 spec 推導。順手確認 Fedora 的 `rust` 套件 Requires `/usr/bin/cc`，所以不用另外列 gcc。
