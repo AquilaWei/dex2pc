@@ -5,8 +5,8 @@
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
-> 目前狀態：**測試版**，`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
-> 以上功能都**尚未在實機上驗收**，請照下方「[實機驗收清單](#實機驗收清單)」試用並回報。
+> 目前狀態：`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
+> 除了 `install-desktop` 的捷徑之外，以上功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**；捷徑**尚未驗收**，細節見「[實機驗收清單](#實機驗收清單)」。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
 ## 運作方式
