@@ -403,6 +403,53 @@ fn packaging_readme_documents_the_deb_container_smoke_test_and_fake_scrcpy() {
     assert!(readme.contains("FAKE"));
 }
 
+/// 執行 smoke-test-deb.sh 測試指定映像；缺容器引擎或連不到倉庫時腳本本機 exit 0 而不實際執行，CI 上則失敗
+fn smoke_test_deb_in(image: &str, deb: &Path) {
+    let output = Command::new("sh")
+        .args(["packaging/smoke-test-deb.sh", image])
+        .arg(deb)
+        .current_dir(ROOT)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    if stderr.contains("略過") {
+        eprintln!("smoke-test-deb 本機略過，未實際執行：{stderr}");
+        return;
+    }
+    assert!(stdout.contains("== smoke test 通過"), "{stdout}");
+}
+
+#[test]
+fn smoke_test_installs_runs_and_removes_deb_in_debian_13_container() {
+    let Some(deb) = built_deb() else {
+        return;
+    };
+
+    smoke_test_deb_in("debian:13", deb);
+}
+
+#[test]
+fn smoke_test_installs_runs_and_removes_deb_in_ubuntu_26_04_container() {
+    let Some(deb) = built_deb() else {
+        return;
+    };
+
+    smoke_test_deb_in("ubuntu:26.04", deb);
+}
+
+#[test]
+fn deb_ships_changelog_as_native_package_name_without_debian_revision() {
+    let Some(listing) = dpkg_deb(&["-c"]) else {
+        return;
+    };
+
+    // 版號沒有 Debian revision，是 native 套件，changelog 檔名是 changelog.gz 而不是 changelog.Debian.gz
+    assert!(!listing.contains("changelog.Debian.gz"), "{listing}");
+}
+
 #[test]
 fn cargo_toml_does_not_pull_in_cargo_deb() {
     // 決定用 dpkg-deb 不用 cargo-deb：不新增建置用的 crate，也不在 Cargo.toml 寫 deb 的 metadata
