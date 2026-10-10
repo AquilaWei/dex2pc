@@ -147,3 +147,11 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 測試放在 `tests/rpm_contents.rs`：真的跑一次煙霧測試（共用已建好的 rpm，約 40 秒，要網路），以及「沒有容器引擎」本機略過／CI 失敗兩個測試。
   - `dnf remove` 會連同為了 scrcpy 裝進來的相依一起移除（約 300 個套件），輸出很長；腳本已加 `-q`。
   - 下一步：deb 軌道 F8（可與 rpm 軌道的 F5 文件平行），之後 F9。
+- **F3 審查修正**：
+  - 容器內的步驟拆到 `packaging/smoke-test-inner.sh`（外層 `smoke-test.sh` 掛載進容器執行），好讓判斷邏輯能用假指令測試。
+  - doctor 驗證收緊：沒有手機時要求退出碼**剛好是 1** 且輸出含「找不到裝置」；0、101（panic）、128 以上（訊號）或缺訊息都失敗。
+  - 網路失敗分類：所有 dnf 步驟（含安裝 rpm 時下載 COPR 的 scrcpy）都經 `run_dnf`，輸出符合已知網路／COPR 無法連線特徵才回 77
+    （本機略過、CI 失敗），其餘一般錯誤保持 1。特徵清單寫在 inner 腳本開頭，遇到新的訊息再補。
+  - 新增 `tests/smoke_logic.rs`（14 個）：假的 dnf／dex2pc／podman，不需要網路或容器，本機與 CI 都跑。
+  - `tests/rpm_contents.rs` 模擬本機的略過測試改成 `env_remove("CI")`；真正的煙霧測試保留繼承的 CI。
+  - 已用真實 Fedora 44 容器重跑通過。

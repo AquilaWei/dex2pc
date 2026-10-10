@@ -255,7 +255,8 @@ fn rpmlint_reports_no_errors_with_project_filters() {
     assert!(stdout.contains("0 errors, 0 warnings"), "{stdout}");
 }
 
-fn smoke_test(rpm: Option<&Path>, envs: &[(&str, &str)], path: Option<&Path>) -> Output {
+/// 執行 smoke-test.sh；`path` 給了就取代 PATH。呼叫端自己決定要不要保留 `CI` 環境變數。
+fn smoke_test_command(rpm: Option<&Path>, path: Option<&Path>) -> Command {
     let mut command = Command::new("sh");
     command.arg("packaging/smoke-test.sh").current_dir(ROOT);
     if let Some(rpm) = rpm {
@@ -264,8 +265,7 @@ fn smoke_test(rpm: Option<&Path>, envs: &[(&str, &str)], path: Option<&Path>) ->
     if let Some(path) = path {
         command.env("PATH", path);
     }
-    command.envs(envs.iter().copied());
-    command.output().unwrap()
+    command
 }
 
 #[test]
@@ -275,7 +275,8 @@ fn smoke_test_installs_runs_and_removes_rpm_in_fedora_container() {
     };
 
     // 沒有容器引擎、拉不到映像或連不到 COPR 時，腳本本機 exit 0 但沒有真的跑，CI 上則 exit 1
-    let output = smoke_test(Some(rpm), &[], None);
+    // 保留繼承來的 CI 環境變數：CI 上跳過就該失敗
+    let output = smoke_test_command(Some(rpm), None).output().unwrap();
 
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -304,7 +305,11 @@ fn path_without_container_engines() -> tempfile::TempDir {
 fn smoke_test_skips_with_exit_zero_when_no_container_engine_and_not_in_ci() {
     let bin = path_without_container_engines();
 
-    let output = smoke_test(None, &[], Some(bin.path()));
+    // 這是在模擬開發者本機，不能讓外層的 CI 變數滲進去
+    let output = smoke_test_command(None, Some(bin.path()))
+        .env_remove("CI")
+        .output()
+        .unwrap();
 
     assert!(output.status.success(), "{output:?}");
     assert!(
@@ -318,7 +323,10 @@ fn smoke_test_skips_with_exit_zero_when_no_container_engine_and_not_in_ci() {
 fn smoke_test_fails_when_no_container_engine_in_ci() {
     let bin = path_without_container_engines();
 
-    let output = smoke_test(None, &[("CI", "1")], Some(bin.path()));
+    let output = smoke_test_command(None, Some(bin.path()))
+        .env("CI", "1")
+        .output()
+        .unwrap();
 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(

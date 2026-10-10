@@ -13,7 +13,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
 image=${DEX2PC_SMOKE_IMAGE:-registry.fedoraproject.org/fedora:latest}
-# 容器內回報「網路不通」用的退出碼，和一般失敗區分
+# smoke-test-inner.sh 回報「連不到網路或 COPR」用的退出碼，和一般失敗區分
 network_down=77
 
 skip() {
@@ -52,41 +52,14 @@ if ! "$engine" pull --quiet "$image" >/dev/null; then
     skip "拉不到映像 $image"
 fi
 
+inner=$root/packaging/smoke-test-inner.sh
+
 set +e
-# :z 讓 SELinux 允許容器讀掛載目錄；--network 預設即可連外
-"$engine" run --rm -v "$rpm_dir:/pkg:ro,z" "$image" sh -eu -c '
-    version=$1
-    rpm=/pkg/$2
-    network_down=$3
-
-    # copr 外掛與 COPR 都要連網；這兩步失敗視為網路問題，不是套件問題
-    dnf install -y -q dnf-plugins-core || exit "$network_down"
-    dnf copr enable -y -q zeno/scrcpy || exit "$network_down"
-
-    echo "== dnf install"
-    dnf install -y -q "$rpm"
-
-    echo "== dex2pc --version"
-    actual=$(dex2pc --version)
-    [ "$actual" = "dex2pc $version" ] || { echo "版本不符：$actual" >&2; exit 1; }
-
-    echo "== dex2pc doctor（容器裡沒有手機，預期回報沒有裝置、但不能 crash）"
-    set +e
-    doctor=$(dex2pc doctor 2>&1)
-    status=$?
-    set -e
-    echo "$doctor"
-    # 1 是 doctor 檢查未通過的正常退出；128 以上是被訊號殺掉（crash）
-    [ "$status" -lt 128 ] || { echo "doctor 異常結束，退出碼 $status" >&2; exit 1; }
-    echo "$doctor" | grep -q "裝置" || { echo "doctor 沒有提到手機／裝置" >&2; exit 1; }
-
-    echo "== dnf remove"
-    dnf remove -y -q dex2pc
-    for path in /usr/bin/dex2pc /usr/share/applications/dex2pc.desktop; do
-        [ ! -e "$path" ] || { echo "移除後 $path 還在" >&2; exit 1; }
-    done
-    echo "== smoke test 通過"
-' sh "$version" "$rpm_name" "$network_down"
+# :z 讓 SELinux 允許容器讀掛載的檔案；網路用預設設定即可連外
+"$engine" run --rm \
+    -v "$rpm_dir:/pkg:ro,z" \
+    -v "$inner:/smoke-test-inner.sh:ro,z" \
+    "$image" sh /smoke-test-inner.sh "$version" "/pkg/$rpm_name"
 status=$?
 set -e
 
