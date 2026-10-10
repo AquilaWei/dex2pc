@@ -340,3 +340,41 @@ fn cargo_toml_does_not_pull_in_cargo_deb() {
     assert!(!cargo_toml.contains("cargo-deb"), "{cargo_toml}");
     assert!(!cargo_toml.contains("metadata.deb"), "{cargo_toml}");
 }
+
+#[test]
+fn build_reads_machine_field_even_when_the_host_locale_translates_readelf() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
+        return;
+    }
+    // 假的 readelf：LC_ALL 不是 C 時印出翻譯過的欄位名（和 ja_JP 等語系的 binutils 一樣），是 C 時才印英文
+    let bin = tempfile::tempdir().unwrap();
+    let fake = bin.path().join("readelf");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n\
+         if [ \"${LC_ALL:-}\" = C ]; then\n\
+           echo '  Machine:                           Advanced Micro Devices X86-64'\n\
+         else\n\
+           echo '  マシン:                            Advanced Micro Devices X86-64'\n\
+         fi\n",
+    )
+    .unwrap();
+    Command::new("chmod").arg("+x").arg(&fake).status().unwrap();
+    let dist = tempfile::tempdir().unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.path().display(),
+        std::env::var("PATH").unwrap()
+    );
+
+    let output = Command::new("sh")
+        .arg("packaging/build-deb.sh")
+        .current_dir(ROOT)
+        .env("PATH", path)
+        .env("LC_ALL", "ja_JP.utf8")
+        .env("DEX2PC_DIST_DIR", dist.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+}
