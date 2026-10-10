@@ -16,8 +16,9 @@ network_down=77
 #
 # 1. 先找一般失敗的證據：有任何一條就是失敗（退出碼 1），即使同一份輸出也有網路字樣。
 #    HTTP 4xx（COPR 名稱打錯也是 404）、dnf 解不出相依、找不到套件、衝突。
+#    curl 22 只代表「HTTP 回應碼是錯誤」，4xx 或 5xx 都會有，所以由實際的 HTTP 狀態決定，不能單獨當證據。
 #    "Failed to resolve the transaction" 是 dnf5 缺相依時的訊息，和網路無關。
-other_failure_pattern='Status code: 4[0-9][0-9]|returned error: 4[0-9][0-9]|Curl error \(22\)|Failed to resolve the transaction|Unable to find a match|nothing provides|conflicting requests'
+other_failure_pattern='Status code: 4[0-9][0-9]|returned error: 4[0-9][0-9]|Failed to resolve the transaction|Unable to find a match|nothing provides|conflicting requests'
 # 2. 沒有一般失敗的證據時，才看有沒有具體的連線問題：DNS 解不出來、連不上、逾時、
 #    伺服器端 5xx。curl 的 6=解析主機失敗 7=連不上 28=逾時 35=SSL 連線失敗 52=空回應 56=接收失敗。
 network_pattern='Could not resolve host|Temporary failure in name resolution|Network is unreachable|Connection timed out|Connection refused|Failed to connect|Curl error \((6|7|28|35|52|56)\)|Status code: 5[0-9][0-9] for'

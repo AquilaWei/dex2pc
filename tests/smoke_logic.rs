@@ -388,3 +388,33 @@ fn inner_exits_77_for_real_dnf5_output_when_network_is_down_during_install() {
 
     assert_eq!(output.status.code(), Some(77), "{output:?}");
 }
+
+#[test]
+fn inner_exits_77_when_metadata_download_fails_with_curl_22_and_http_503() {
+    // curl 22 只是「HTTP 回應是錯誤」；伺服器回 503（暫時無法服務）要當成連線問題略過
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "copr"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to download metadata for repo 'copr:copr.fedorainfracloud.org:zeno:scrcpy'\n\
+             Curl error (22): HTTP response code said error for https://copr.fedorainfracloud.org/coprs/zeno/scrcpy/repo/fedora-44/ (The requested URL returned error: 503)\n\
+             Status code: 503 for https://copr.fedorainfracloud.org/coprs/zeno/scrcpy/repo/fedora-44/\n\
+             Error: Failed to download metadata",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(77), "{output:?}");
+}
+
+#[test]
+fn inner_exits_1_when_curl_22_has_no_http_status_to_decide_by() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Curl error (22): HTTP response code said error",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
