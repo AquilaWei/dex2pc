@@ -126,6 +126,32 @@ fn build_script_produces_rpm_named_after_cargo_toml_version() {
 }
 
 #[test]
+fn build_script_lists_only_the_rpm_it_just_built() {
+    if run_in_root("rpmbuild", &["--version"]).is_none() {
+        return;
+    }
+    let dist = tempfile::tempdir().unwrap();
+    std::fs::write(dist.path().join("dex2pc-0.1.0-1.fc44.x86_64.rpm"), b"").unwrap();
+
+    let output = Command::new("sh")
+        .arg("packaging/build-rpm.sh")
+        .current_dir(ROOT)
+        .env("DEX2PC_DIST_DIR", dist.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // rpmbuild 也會印 "Wrote: .../RPMS/...rpm"，所以只數落在 dist 底下的路徑
+    let listed: Vec<&str> = stdout
+        .lines()
+        .filter(|line| Path::new(line).starts_with(dist.path()))
+        .collect();
+    assert_eq!(listed.len(), 1, "{stdout}");
+    assert!(listed[0].contains("/dex2pc-0.2.0-1."), "{stdout}");
+}
+
+#[test]
 fn build_script_succeeds_when_cargo_target_dir_points_elsewhere() {
     if run_in_root("rpmbuild", &["--version"]).is_none() {
         return;
