@@ -4,10 +4,30 @@ set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 
-# 只讀 [package] 區段，避免抓到依賴表裡的 version = "..."
+# 只讀 [package] 區段，避免抓到依賴表裡的 version = "..."。
+# 容忍行首縮排、區段標題後的註解、單引號或雙引號的字串、值後面的註解（\047 是單引號）。
 version=$(awk '
-    /^\[/ { in_package = ($0 == "[package]"); next }
-    in_package && /^version[ \t]*=/ { gsub(/^[^"]*"|".*$/, ""); print; exit }
+    {
+        line = $0
+        sub(/^[ \t]+/, "", line)
+    }
+    line ~ /^\[/ {
+        header = line
+        sub(/[ \t]*(#.*)?$/, "", header)
+        in_package = (header == "[package]")
+        next
+    }
+    in_package && line ~ /^version[ \t]*=/ {
+        sub(/^version[ \t]*=[ \t]*/, "", line)
+        quote = substr(line, 1, 1)
+        if (quote != "\"" && quote != "\047") next
+        rest = substr(line, 2)
+        end = index(rest, quote)
+        if (end > 1) {
+            print substr(rest, 1, end - 1)
+            exit
+        }
+    }
 ' "$root/Cargo.toml")
 
 if [ -z "$version" ]; then

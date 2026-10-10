@@ -28,22 +28,16 @@ fn run_version_sh(script: &Path, dir: &Path) -> String {
 
 #[test]
 fn version_script_prints_cargo_toml_version_with_single_newline() {
-    assert_eq!(
-        version_sh(Path::new(env!("CARGO_MANIFEST_DIR"))),
-        concat!(env!("CARGO_PKG_VERSION"), "\n")
-    );
+    assert_eq!(version_sh(Path::new(env!("CARGO_MANIFEST_DIR"))), "0.2.0\n");
 }
 
 #[test]
 fn version_script_gives_same_result_from_another_working_directory() {
-    assert_eq!(
-        version_sh(Path::new("/")),
-        concat!(env!("CARGO_PKG_VERSION"), "\n")
-    );
+    assert_eq!(version_sh(Path::new("/")), "0.2.0\n");
 }
 
-#[test]
-fn version_script_ignores_version_key_in_dependency_table() {
+/// 把 `cargo_toml` 放進暫存目錄裡的假專案，執行複製過去的 version.sh。
+fn version_from_cargo_toml(cargo_toml: &str) -> std::process::Output {
     let root = tempfile::tempdir().unwrap();
     let common = root.path().join("packaging/common");
     std::fs::create_dir_all(&common).unwrap();
@@ -52,16 +46,72 @@ fn version_script_ignores_version_key_in_dependency_table() {
         common.join("version.sh"),
     )
     .unwrap();
-    std::fs::write(
-        root.path().join("Cargo.toml"),
-        "[dependencies.foo]\nversion = \"9.9.9\"\n\n[package]\nname = \"x\"\nversion = \"1.2.3\"\n",
-    )
-    .unwrap();
+    std::fs::write(root.path().join("Cargo.toml"), cargo_toml).unwrap();
+    Command::new("sh")
+        .arg(common.join("version.sh"))
+        .current_dir(root.path())
+        .output()
+        .unwrap()
+}
 
+fn stdout_of_successful_version_sh(cargo_toml: &str) -> String {
+    let output = version_from_cargo_toml(cargo_toml);
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn version_script_ignores_version_key_in_dependency_table() {
     assert_eq!(
-        run_version_sh(&common.join("version.sh"), root.path()),
+        stdout_of_successful_version_sh(
+            "[dependencies.foo]\nversion = \"9.9.9\"\n\n[package]\nname = \"x\"\nversion = \"1.2.3\"\n"
+        ),
         "1.2.3\n"
     );
+}
+
+#[test]
+fn version_script_reads_package_section_header_followed_by_comment() {
+    assert_eq!(
+        stdout_of_successful_version_sh(
+            "[package] # 套件資訊\nname = \"x\"\nversion = \"1.2.3\"\n"
+        ),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn version_script_reads_indented_version_line() {
+    assert_eq!(
+        stdout_of_successful_version_sh("[package]\nname = \"x\"\n    version   =   \"1.2.3\"\n"),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn version_script_reads_single_quoted_version() {
+    assert_eq!(
+        stdout_of_successful_version_sh("[package]\nversion = '1.2.3'\n"),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn version_script_drops_comment_after_version_value() {
+    assert_eq!(
+        stdout_of_successful_version_sh("[package]\nversion = \"1.2.3\" # 進版時改這裡\n"),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn version_script_fails_when_package_has_no_version() {
+    let output = version_from_cargo_toml(
+        "[package]\nname = \"x\"\n\n[dependencies.foo]\nversion = \"9.9.9\"\n",
+    );
+
+    assert!(!output.status.success());
+    assert_eq!(output.stdout, b"");
 }
 
 #[test]
