@@ -133,6 +133,38 @@ fn readme_install_section_documents_building_the_rpm_and_removing_it() {
 }
 
 #[test]
+fn readme_rpm_build_command_installs_every_buildrequires_and_build_rpm_tool() {
+    // 建置步驟的 dnf 指令要涵蓋 spec 的 BuildRequires（build-rpm.sh 在 cargo 來自 rpm 時會檢查）與腳本用到的 git、tar
+    let spec = include_str!("../packaging/rpm/dex2pc.spec");
+    let line = install_line(README, "sudo dnf install rpm-build");
+    let installed: Vec<&str> = line.split_whitespace().collect();
+
+    for name in spec
+        .lines()
+        .filter_map(|line| line.strip_prefix("BuildRequires:"))
+        .filter_map(|rest| rest.split_whitespace().next())
+    {
+        assert!(
+            installed.contains(&name),
+            "{name} 不在 README 的指令：{line}"
+        );
+    }
+    for tool in ["rpm-build", "git", "tar"] {
+        assert!(
+            installed.contains(&tool),
+            "{tool} 不在 README 的指令：{line}"
+        );
+    }
+}
+
+/// 回傳含 `prefix` 的那一行（README 裡只出現一次的指令）
+fn install_line<'a>(doc: &'a str, prefix: &str) -> &'a str {
+    doc.lines()
+        .find(|line| line.starts_with(prefix))
+        .unwrap_or_else(|| panic!("找不到以 {prefix} 開頭的行"))
+}
+
+#[test]
 fn readme_install_section_says_patch_versions_are_artifacts_only() {
     let install = section(README, "\n## 安裝\n");
 
