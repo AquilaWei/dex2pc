@@ -27,7 +27,10 @@ pkg=$top/pkg
 cargo build --release --locked --target-dir "$root/target"
 
 # 打包前再確認執行檔真的是 x86-64 ELF（例如 .cargo/config 指定了別的 target 時會不符）
-machine=$(LC_ALL=C readelf -h target/release/dex2pc | sed -n 's/^ *Machine: *//p')
+# 先完整取得 header 再解析：管線只會保留最後一段的退出狀態，readelf 失敗會被吞掉
+# LC_ALL=C：翻譯過的 locale 會連 "Machine:" 標籤一起翻掉
+elf_header=$(LC_ALL=C readelf -h target/release/dex2pc)
+machine=$(printf '%s\n' "$elf_header" | sed -n 's/^ *Machine: *//p')
 if [ "$machine" != "Advanced Micro Devices X86-64" ]; then
     echo "target/release/dex2pc is not an x86-64 binary (Machine: $machine)" >&2
     exit 1

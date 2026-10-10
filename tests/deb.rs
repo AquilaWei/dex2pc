@@ -23,7 +23,7 @@ fn built_deb() -> Option<&'static Path> {
     BUILT
         .get_or_init(|| {
             // build-deb.sh 用到 cargo、git、gzip、strip（install -s）、dpkg-deb；測試另外用 desktop-file-validate 以外的工具
-            if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du"]) {
+            if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
                 return None;
             }
             let dist = tempfile::tempdir().unwrap();
@@ -153,6 +153,20 @@ fn build_refuses_on_a_non_x86_64_host() {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("aarch64"));
+}
+
+#[test]
+fn build_refuses_when_readelf_fails_even_if_it_printed_x86_64() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
+        return;
+    }
+
+    let output = build_with_fake(
+        "readelf",
+        "#!/bin/sh\necho '  Machine:                           Advanced Micro Devices X86-64'\nexit 1\n",
+    );
+
+    assert!(!output.status.success());
 }
 
 #[test]
