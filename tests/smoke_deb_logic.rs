@@ -29,10 +29,18 @@ apt-get)
     fi
     ;;
 apt-cache)
+    if [ -n "${FAKE_APT_CACHE_FAIL:-}" ]; then
+        echo "E: The package cache file is corrupted" >&2
+        exit 100
+    fi
     case "$2" in
     scrcpy)
         candidate=${FAKE_SCRCPY_CANDIDATE-3.3.4-1}
-        [ -n "$candidate" ] && printf 'scrcpy:\n  Installed: (none)\n  Candidate: %s\n' "$candidate"
+        # 倉庫沒有這個套件時，真的 apt-cache policy 不印東西但退出 0
+        if [ -n "$candidate" ]; then
+            printf 'scrcpy:\n  Installed: (none)\n  Candidate: %s\n' "$candidate"
+        fi
+        exit 0
         ;;
     adb) printf 'adb:\n  Installed: (none)\n  Candidate: 1:34.0.5-12\n' ;;
     esac
@@ -212,6 +220,19 @@ fn inner_builds_the_fake_scrcpy_when_the_repository_has_no_scrcpy() {
     assert_eq!(run.code(), Some(0), "{}", run.stderr());
     assert!(run.log().contains("equivs-build"), "{}", run.log());
     assert!(run.stdout().contains("（沒有）"), "{}", run.stdout());
+}
+
+#[test]
+fn inner_exits_1_when_apt_cache_policy_fails_instead_of_installing_a_fake_scrcpy() {
+    let run = inner(&[("FAKE_APT_CACHE_FAIL", "1")]);
+
+    assert_eq!(run.code(), Some(1), "{}", run.stdout());
+    assert!(!run.log().contains("equivs-build"), "{}", run.log());
+    assert!(
+        !run.stdout().contains("smoke test 通過"),
+        "{}",
+        run.stdout()
+    );
 }
 
 #[test]
@@ -523,6 +544,18 @@ fn outer_keeps_a_fully_qualified_image_name_as_given() {
         calls.contains("podman pull --quiet registry.example/debian:13"),
         "{calls}"
     );
+}
+
+#[test]
+fn outer_script_is_executable_so_the_documented_command_runs_directly() {
+    let output = Command::new("packaging/smoke-test-deb.sh")
+        .current_dir(ROOT)
+        .env_remove("CI")
+        .output()
+        .unwrap();
+
+    // 沒給映像參數時用法錯誤是 2；沒有執行權限會是 126
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
 }
 
 #[test]

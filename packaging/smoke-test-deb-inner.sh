@@ -46,8 +46,14 @@ run_apt apt-get -o APT::Update::Error-Mode=any update -qq
 
 . "$root/etc/os-release"
 # 倉庫的版本，給 README 說明怎麼取得 scrcpy 的依據
+# 先完整取得輸出再解析：寫成管線的話 apt-cache 失敗會被吞掉，被當成「倉庫沒有這個套件」
+# （沒有這個套件時 apt-cache policy 仍是退出 0，只是不印東西）
 policy_version() {
-    apt-cache policy "$1" | sed -n 's/^ *Candidate: *//p'
+    policy=$(apt-cache policy "$1") || {
+        echo "smoke-test-deb-inner.sh: apt-cache policy $1 失敗" >&2
+        exit 1
+    }
+    printf '%s\n' "$policy" | sed -n 's/^ *Candidate: *//p'
 }
 repo_scrcpy=$(policy_version scrcpy)
 # android-tools-adb 在 Debian 13 / Ubuntu 26.04 是 adb 套件 Provides 的虛擬名稱，要看 adb 的版本
