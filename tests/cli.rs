@@ -239,6 +239,52 @@ fn start_dry_run_with_keyboard_sdk_in_config_passes_keyboard_sdk() {
     );
 }
 
+/// 預設參數含 scrcpy 3.2 才有的 `--display-ime-policy`；假的 scrcpy 3.1.1 跟真的一樣不認得它，
+/// 所以 dex2pc 必須在環境檢查就擋下，不能啟動 scrcpy。
+#[test]
+fn start_with_scrcpy_3_1_fails_without_launching_scrcpy() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let log = bin.path().join("calls.log");
+    let log_path = log.display();
+
+    let adb = r#"#!/bin/sh
+case "$*" in
+  version) printf 'Android Debug Bridge version 1.0.41\n' ;;
+  "devices -l") printf 'List of devices attached\nR5CW1234ABC  device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\n\n' ;;
+  "-s R5CW1234ABC shell getprop") printf '[ro.build.version.oneui]: [80500]\n[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S926B]\n' ;;
+  *) exit 1 ;;
+esac
+"#
+    .to_string();
+    let scrcpy = format!(
+        r#"#!/bin/sh
+echo "scrcpy $*" >> '{log_path}'
+case "$*" in
+  --version) printf 'scrcpy 3.1.1 <https://github.com/Genymobile/scrcpy>\n' ;;
+  *--display-ime-policy*) echo "scrcpy: unrecognized option '--display-ime-policy=local'" >&2; exit 1 ;;
+esac
+"#
+    );
+    for (name, body) in [("adb", adb), ("scrcpy", scrcpy)] {
+        let path = bin.path().join(name);
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = dex2pc()
+        .arg("start")
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("PATH", bin.path())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "scrcpy --version\n");
+}
+
 /// F8 結論：實機確認 DeX 不需要改 adb settings，dex2pc 不得在啟動時呼叫 `adb settings`。
 /// 假的 adb / scrcpy 把每次呼叫寫進同一份 log；未預期的 adb 呼叫（含 settings）會讓 adb 失敗。
 #[test]

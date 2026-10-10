@@ -28,7 +28,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 檢查 adb 與 scrcpy（3.0 以上）是否就緒、手機是否已連接並授權、是否為 One UI 8 以上的 Samsung，缺少時印出 Fedora 的安裝指令
+    /// 檢查 adb 與 scrcpy（3.2 以上）是否就緒、手機是否已連接並授權、是否為 One UI 8 以上的 Samsung，缺少時印出 Fedora 的安裝指令
     Doctor {
         /// 要使用的裝置序號（adb devices 列出的第一欄）；只連一台時可省略
         #[arg(long, short)]

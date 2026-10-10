@@ -42,7 +42,7 @@ flowchart LR
 - **電腦**：Fedora Linux（只支援 Linux）
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
 - **adb**：`sudo dnf install android-tools`
-- **scrcpy 3.0 以上**（需要 `--new-display`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
+- **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
 - 建置需要 Rust（cargo）
 
@@ -186,6 +186,6 @@ cargo run --example sync_version_badge
 
 [scrcpy](https://github.com/Genymobile/scrcpy) 是 Genymobile 開發的**開源免費**工具（Apache 2.0）。
 它經 ADB 在手機上暫時跑一個小程式，負責畫面串流、在電腦上開視窗、轉送鍵鼠事件；
-**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器，One UI 8 起 DeX 會直接跑在上面（已在實機確認，見上方「手機端需要另外設定嗎？」）。
+**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器（dex2pc 另外用到 3.2 起才有的 `--display-ime-policy`，所以要求 3.2 以上），One UI 8 起 DeX 會直接跑在上面（已在實機確認，見上方「手機端需要另外設定嗎？」）。
 
 dex2pc **不重寫**這些部分，只負責檢查環境、組好 scrcpy 參數、一鍵啟動。

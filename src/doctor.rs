@@ -11,8 +11,9 @@ pub const ADB_INSTALL_HINT: &str = "sudo dnf install android-tools";
 // scrcpy 官方 doc/linux.md 列的 Fedora 來源是 COPR zeno/scrcpy（2026-10 查證）
 pub const SCRCPY_INSTALL_HINT: &str = "sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy";
 
-/// `--new-display`（在手機上建立虛擬顯示器）從 scrcpy 3.0 開始才有。
-pub const MIN_SCRCPY: Version = Version(3, 0, 0);
+/// `scrcpy::build_args` 一律傳的參數裡最晚出現的是 `--display-ime-policy`（scrcpy 3.2 起；
+/// `--new-display` 是 3.0 起）。比這舊的 scrcpy 會在檢查通過後才因參數不認得而啟動失敗。
+pub const MIN_SCRCPY: Version = Version(3, 2, 0);
 
 /// 主、次、修訂版號；欄位順序讓 derive 出來的比較就是版本大小的比較。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -223,7 +224,7 @@ fn check_scrcpy(runner: &dyn CommandRunner, out: &mut dyn Write) -> io::Result<b
         Some(version) => {
             writeln!(
                 out,
-                "scrcpy {version} 不支援虛擬顯示（--new-display），需要 {MIN_SCRCPY} 以上，請更新：{SCRCPY_INSTALL_HINT}"
+                "scrcpy {version} 太舊，不支援 DeX 視窗需要的參數（--new-display、--display-ime-policy），需要 {MIN_SCRCPY} 以上，請更新：{SCRCPY_INSTALL_HINT}"
             )?;
             Ok(false)
         }
@@ -245,7 +246,8 @@ mod tests {
 
     const ADB_OUTPUT: &str = "Android Debug Bridge version 1.0.41\nVersion 35.0.2-android-tools\nInstalled as /usr/bin/adb\n";
     const SCRCPY_331_OUTPUT: &str = "scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>\n\nDependencies (compiled / linked):\n - SDL: 2.30.0 / 2.30.0\n";
-    const SCRCPY_30_OUTPUT: &str = "scrcpy 3.0 <https://github.com/Genymobile/scrcpy>\n";
+    const SCRCPY_32_OUTPUT: &str = "scrcpy 3.2 <https://github.com/Genymobile/scrcpy>\n";
+    const SCRCPY_311_OUTPUT: &str = "scrcpy 3.1.1 <https://github.com/Genymobile/scrcpy>\n";
     const SCRCPY_225_OUTPUT: &str = "scrcpy 2.2.5 <https://github.com/Genymobile/scrcpy>\n";
     const ONE_DEVICE: &str = "List of devices attached\nR5CW1234ABC            device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\n\n";
     const S23_ONE_UI_80: &str = "[ro.build.version.oneui]: [80000]\n[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S918B]\n";
@@ -626,28 +628,41 @@ mod tests {
     }
 
     #[test]
-    fn doctor_with_scrcpy_exactly_3_0_succeeds() {
+    fn doctor_with_scrcpy_exactly_3_2_succeeds() {
         let (ok, out) = doctor(&FakeRunner::new(
             Reply::Ok(ADB_OUTPUT),
-            Reply::Ok(SCRCPY_30_OUTPUT),
+            Reply::Ok(SCRCPY_32_OUTPUT),
         ));
 
         assert!(ok);
         assert_eq!(
             out,
-            "adb：1.0.41\nscrcpy：3.0.0\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
+            "adb：1.0.41\nscrcpy：3.2.0\n裝置：R5CW1234ABC（SM_S918B）\n連線：無法判斷 USB 速度\n型號：SM-S918B（Android SDK 36，One UI 8.0）\n判定：支援 DeX 虛擬顯示\n"
         );
     }
 
     #[test]
-    fn doctor_with_scrcpy_below_3_fails_and_reports_no_virtual_display() {
+    fn doctor_with_scrcpy_3_1_1_fails_and_requires_3_2() {
+        let (ok, out) = doctor(&FakeRunner::new(
+            Reply::Ok(ADB_OUTPUT),
+            Reply::Ok(SCRCPY_311_OUTPUT),
+        ));
+
+        assert!(!ok);
+        assert!(out.contains(
+            "scrcpy 3.1.1 太舊，不支援 DeX 視窗需要的參數（--new-display、--display-ime-policy），需要 3.2.0 以上"
+        ));
+    }
+
+    #[test]
+    fn doctor_with_scrcpy_below_3_fails_and_reports_too_old() {
         let (ok, out) = doctor(&FakeRunner::new(
             Reply::Ok(ADB_OUTPUT),
             Reply::Ok(SCRCPY_225_OUTPUT),
         ));
 
         assert!(!ok);
-        assert!(out.contains("scrcpy 2.2.5 不支援虛擬顯示（--new-display）"));
+        assert!(out.contains("scrcpy 2.2.5 太舊，不支援 DeX 視窗需要的參數"));
     }
 
     #[test]
