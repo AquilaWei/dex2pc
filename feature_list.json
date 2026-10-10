@@ -2,21 +2,22 @@
   "features": [
     {
       "id": "F1",
-      "description": "建立 packaging/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64）；Version 由 Cargo.toml 讀取，不另外寫死",
+      "description": "建立 packaging/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64）；Version 由 Cargo.toml 讀取，不另外寫死；spec 只用 Fedora、RHEL 系與 openSUSE 都有的巨集，發行版專屬部分用 %{?suse_version} 等條件包起來",
       "steps": [
         "`packaging/build-rpm.sh` 在乾淨的 checkout 上執行後，於 `dist/` 產出 `dex2pc-<Cargo.toml 版號>-1.*.x86_64.rpm`",
         "`rpmspec -P packaging/dex2pc.spec` 可解析且無錯誤",
         "整合測試（tests/rpm.rs）檢查 spec 的 Version 等於 Cargo.toml 的 version；本機沒有 rpmbuild 時自動略過，CI 一定要跑",
+        "spec 不含只有單一發行版才有的巨集或路徑（用 `%{_bindir}`、`%{_datadir}` 等通用巨集）；測試以 `rpmspec -P` 檢查在 `--define 'suse_version 1600'` 與不定義時都能解析",
         "`dist/` 加進 .gitignore，rpm 與 tarball 不進 git"
       ],
       "passes": false
     },
     {
       "id": "F2",
-      "description": "rpm 內容與相依：安裝 /usr/bin/dex2pc、授權檔、README、全系統的 /usr/share/applications/dex2pc.desktop；Requires android-tools 與 scrcpy",
+      "description": "rpm 內容與相依：安裝 /usr/bin/dex2pc、授權檔、README、全系統的 /usr/share/applications/dex2pc.desktop；相依以跨發行版通用的方式處理（android-tools、scrcpy 的名稱與可得性因發行版而異，見 questions）",
       "steps": [
         "`rpm -qlp dist/*.rpm` 列出 /usr/bin/dex2pc、/usr/share/applications/dex2pc.desktop、授權檔與 README，且沒有 target/ 或其他建置產物",
-        "`rpm -qRp dist/*.rpm` 含 android-tools 與 scrcpy",
+        "`rpm -qRp dist/*.rpm` 與 `rpm -q --recommends -p dist/*.rpm` 依「相依處理」的決定列出 android-tools 與 scrcpy，且不含任何只有單一發行版才有的套件名稱而導致其他發行版無法安裝",
         "`desktop-file-validate` 通過系統 .desktop 檔；其 Exec 為 `dex2pc start`（不含絕對路徑、不加 --watch）",
         "`rpmlint` 對產出的 rpm 沒有 error（warning 逐項處理或在文件說明原因）",
         "測試以 rpm 指令檢查上述項目，工具缺少時略過"
@@ -25,13 +26,24 @@
     },
     {
       "id": "F3",
-      "description": "在 Fedora 容器內安裝 rpm 並做啟動驗證，確認 rpm 在真實環境可用",
+      "description": "在 Fedora、openSUSE 與 RHEL 系（AlmaLinux/Rocky）容器內安裝 rpm 並做啟動驗證，確認 rpm 在各目標發行版可用",
       "steps": [
-        "`packaging/smoke-test.sh` 在 fedora 容器（podman/docker）內 `dnf install` 產出的 rpm 成功",
+        "`packaging/smoke-test.sh <image>` 在指定容器（預設 fedora，另含 opensuse/tumbleweed 與 almalinux）內以該發行版的套件管理員（dnf/zypper）安裝產出的 rpm 成功；缺少 scrcpy 等相依時仍可安裝",
         "容器內 `dex2pc --version` 輸出 Cargo.toml 的版號",
         "容器內 `dex2pc doctor` 能執行並回報沒有手機（不 crash）",
-        "`dnf remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
-        "沒有容器引擎時腳本以明確訊息略過（exit 0），CI 一定要跑"
+        "移除套件（dnf remove / zypper remove）後 /usr/bin/dex2pc 與 .desktop 都被移除",
+        "沒有容器引擎時腳本以明確訊息略過（exit 0），CI 一定要跑",
+        "CI 以 matrix 對每個目標發行版各跑一次；實際可支援的發行版與版本以 questions 的答案為準"
+      ],
+      "passes": false
+    },
+    {
+      "id": "F7",
+      "description": "doctor 的安裝提示依發行版調整：讀 /etc/os-release，Fedora 維持 dnf 指令，openSUSE 用 zypper，RHEL 系說明 scrcpy 需自行取得；讀取路徑可注入以便測試",
+      "steps": [
+        "單元測試以假的 os-release 內容驗證 fedora、opensuse-tumbleweed、almalinux 各輸出對應的安裝指令，預期字串直接寫死",
+        "os-release 不存在或發行版未知時，印出通用說明而不是 crash",
+        "README 的「需求」段落同步說明各發行版的安裝方式"
       ],
       "passes": false
     },
@@ -39,7 +51,7 @@
       "id": "F4",
       "description": "GitHub Actions：push/PR 時跑 verify 並建置 rpm，推 vX.Y.Z tag 時建置 rpm、附 SHA256、發佈到 GitHub Release",
       "steps": [
-        ".github/workflows 的 PR 流程跑 fmt、clippy、test、build-rpm 與 smoke-test 並上傳 rpm artifact",
+        ".github/workflows 的 PR 流程跑 fmt、clippy、test、build-rpm，以及各目標發行版的 smoke-test，並上傳 rpm artifact",
         "tag `vX.Y.Z` 與 Cargo.toml 版號不一致時 workflow 失敗",
         "release 流程在 CI 綠燈後才建立 Release，附 rpm 與 `.sha256` 檔，release notes 取自 CHANGELOG 對應版本",
         "workflow 通過 `actionlint`（有裝時）；實際發佈只能在推 tag 後於 GitHub 驗證，列入需要使用者操作的清單"
@@ -53,7 +65,8 @@
         "README 的「安裝」段落有 `sudo dnf install ./dex2pc-*.rpm` 可直接複製的指令，並說明與 `cargo install` 的差別（rpm 的捷徑由套件提供，不必再跑 install-desktop）",
         "README 說明從原始碼自建 rpm 的步驟（需要的套件與 build-rpm.sh）",
         "CHANGELOG [Unreleased] 以使用者看得懂的話記錄新增 rpm 安裝包",
-        "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過"
+        "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過",
+        "README 說明 rpm 支援的發行版與各自的 adb、scrcpy 取得方式"
       ],
       "passes": false
     },
@@ -70,26 +83,26 @@
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
   "questions": [
     {
-      "question": "rpm 要用哪種方式建置？",
+      "question": "rpm 要實際支援哪些發行版（CI 會各跑一次安裝測試）？",
       "options": [
-        "rpmbuild + 自寫 spec（Fedora 原生，之後可上 COPR）",
-        "cargo-generate-rpm（設定寫在 Cargo.toml，較簡單但非標準流程）"
+        "Fedora 當前版 + openSUSE Tumbleweed + AlmaLinux 10",
+        "只 Fedora 與 openSUSE Tumbleweed",
+        "Fedora、openSUSE Leap 與 Tumbleweed、AlmaLinux 9 與 10"
       ]
     },
     {
-      "question": "rpm 要支援的目標？",
+      "question": "rpm 的 Requires 怎麼處理 scrcpy（Fedora 官方庫沒有，RHEL 系也沒有）？",
       "options": [
-        "只做 Fedora 當前版本的 x86_64",
-        "Fedora x86_64 加 aarch64",
-        "也要相容 RHEL/openSUSE 等其他 rpm 系"
-      ]
-    },
-    {
-      "question": "rpm 的 Requires 怎麼處理 scrcpy（Fedora 官方庫沒有，需 COPR zeno/scrcpy）？",
-      "options": [
-        "用 Recommends，不強制，doctor 已會提示安裝",
-        "用 Requires，強制相依（使用者需先啟用 COPR）",
+        "用 Recommends，不強制，doctor 會提示安裝",
+        "用 Requires，強制相依",
         "不寫相依，只在 README 說明"
+      ]
+    },
+    {
+      "question": "doctor 的安裝提示要不要依發行版調整（F7）？",
+      "options": [
+        "要，依 os-release 顯示對應指令",
+        "不要，維持只提示 Fedora 指令"
       ]
     },
     {
@@ -100,10 +113,17 @@
       ]
     },
     {
-      "question": "我在 worktree 看到的 repo 是空的（只有 Init commit），完整程式碼在主 checkout 且只是 staged 未 commit。要怎麼處理？",
+      "question": "worktree 是空的，完整程式碼在主 checkout 且只是 staged 未 commit。要怎麼處理？",
       "options": [
         "先由你在主 checkout commit 現有程式，再讓後續 session 在其上開發",
         "讓我把主 checkout 的檔案帶進這個分支一起 commit"
+      ]
+    },
+    {
+      "question": "Flatpak 要不要另外做（不取代 rpm，之後獨立功能）？",
+      "options": [
+        "先不做，rpm 完成後再評估",
+        "要，列入後續功能"
       ]
     }
   ]
