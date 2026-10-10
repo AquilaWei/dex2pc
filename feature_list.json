@@ -1,20 +1,29 @@
 {
   "features": [
     {
+      "id": "F11",
+      "description": "打包共用基礎（rpm 與 deb 平行開發前先做完）：packaging/common/ 放共用的 dex2pc.desktop 與讀取 Cargo.toml 版號的 version.sh，並把 dist/ 加進 .gitignore",
+      "steps": [
+        "`packaging/common/version.sh` 在專案根目錄輸出 Cargo.toml 的 version（例如 `0.2.0`），不含換行以外的字元；放在別的工作目錄執行也得到相同結果",
+        "`packaging/common/dex2pc.desktop` 的 Exec 為 `dex2pc start`（不含絕對路徑、不加 --watch），`desktop-file-validate` 通過（工具缺少時略過）",
+        "`.gitignore` 排除 `dist/`，`git status` 在產生 dist/ 後仍乾淨",
+        "整合測試（tests/packaging_common.rs）檢查上述三項；預期的版號與 Exec 字串直接寫死在測試裡"
+      ],
+      "passes": false
+    },
+    {
       "id": "F1",
       "description": "建立 packaging/rpm/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64，Fedora）；Version 由 Cargo.toml 讀取，不另外寫死；打包檔依格式分目錄（packaging/rpm/），共用檔（.desktop）放 packaging/common/，deb 也沿用同一套結構（packaging/deb/）",
       "steps": [
         "`packaging/build-rpm.sh` 在乾淨的 checkout 上執行後，於 `dist/` 產出 `dex2pc-<Cargo.toml 版號>-1.*.x86_64.rpm`",
         "`rpmspec -P packaging/rpm/dex2pc.spec` 可解析且無錯誤",
-        "整合測試（tests/rpm.rs）檢查 spec 的 Version 等於 Cargo.toml 的 version；本機沒有 rpmbuild 時自動略過，CI 一定要跑",
-        "`dist/` 加進 .gitignore，rpm 與 tarball 不進 git",
-        "`dist/` 加進 .gitignore，rpm 與 tarball 不進 git"
+        "整合測試（tests/rpm.rs）檢查 spec 的 Version 等於 Cargo.toml 的 version；本機沒有 rpmbuild 時自動略過，CI 一定要跑"
       ],
       "passes": false
     },
     {
       "id": "F2",
-      "description": "rpm 內容與相依：安裝 /usr/bin/dex2pc、授權檔、README、全系統的 /usr/share/applications/dex2pc.desktop（來自 packaging/common/）；Requires android-tools 與 scrcpy（強制相依）",
+      "description": "rpm 內容與相依：安裝 /usr/bin/dex2pc、授權檔、README、全系統的 /usr/share/applications/dex2pc.desktop（沿用 F11 建立的 packaging/common/dex2pc.desktop）；Requires android-tools 與 scrcpy（強制相依）",
       "steps": [
         "`rpm -qlp dist/*.rpm` 列出 /usr/bin/dex2pc、/usr/share/applications/dex2pc.desktop、授權檔與 README，且沒有 target/ 或其他建置產物",
         "`rpm -qRp dist/*.rpm` 含 android-tools 與 scrcpy（Requires，不是 Recommends）",

@@ -16,7 +16,7 @@
 
 ## 計畫
 
-F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
+F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執行」）F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
 → F8 deb 建置 → F9 Debian/Ubuntu 容器煙霧測試 → F4 CI 與發佈（rpm+deb）→ F5 rpm 文件 → F10 deb 文件 → F6 實機驗收。
 
 ## 使用者回覆（2026-10-10）
@@ -64,6 +64,30 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
   發佈 workflow 只接 `v*.*.0`。
 - 目前以 **Public repo** 為主：用免費 GitHub-hosted runner 與內建 GITHUB_TOKEN，不設 secret；若日後改私有 repo 再評估（runner 額度、artifact 可見性）。
 
+## 平行執行（第六輪，使用者要求：能拆成 subagent 平行就盡量平行）
+
+**結論：可以，分成兩條獨立的軌道，前面一個小的共用基礎、後面一個匯合點。**
+
+| 階段 | 功能 | 依賴 | 備註 |
+|------|------|------|------|
+| 0 | F11 打包共用基礎 | 無 | 先做完（小）：共用 .desktop、version.sh、.gitignore。這是 rpm 與 deb 唯一共用的檔案，先做才不會互相衝突 |
+| 1 | rpm 軌道 F1 → F2 → F3 → F5 | F11 | 檔案範圍：`packaging/rpm/`、`packaging/build-rpm.sh`、`packaging/smoke-test.sh`、`tests/rpm.rs` |
+| 1 | deb 軌道 F8 → F9 → F10 | F11 | 檔案範圍：`packaging/deb/`、`packaging/build-deb.sh`、`packaging/smoke-test-deb.sh`、`tests/deb.rs` |
+| 2 | F4 CI 與發佈 | F3、F9 | 需要兩條軌道的腳本都存在；`.github/workflows/` 是它獨佔的目錄 |
+| 3 | F6 實機驗收清單 | F4、F5、F10 | 使用者操作 |
+
+- 兩條軌道的程式、腳本、測試**檔案互不重疊**，可各由一個 subagent 在**各自的 git worktree**（`isolation: "worktree"`）同時做；
+  同一軌道內的功能依序做（後者用前者的產物）。
+- **會衝突的共用檔案只有 README.md 與 CHANGELOG.md**（F5 與 F10 都要改）。規則：F5 只動 README 的 rpm 段落，F10 只動 deb 段落，
+  CHANGELOG 各自在 [Unreleased] 加一行；合併時由主 session 解衝突，不叫 subagent 自己合併。
+- 合併順序：F11 → 兩條軌道各自 commit 後由主 session 依序併回 → 跑完整 verify → 再做 F4。每個 subagent 只在自己的 worktree 跑 verify，
+  功能是否完成以併回後的完整 verify 為準。
+- 同一軌道內能再拆的：F3、F9 的容器腳本與測試可與 F5、F10 的文件平行（文件只依賴 F2、F8 已決定的內容）。
+  但文件段落要等 F3、F9 查到真實資料（COPR、倉庫 scrcpy 版本）才能定稿，所以建議先平行起草、最後再回填。
+- 不適合平行的：F4（要等兩條軌道的腳本）、F6（需人工）、F11（是其他功能的前置）。
+- 沒有在 feature_list.json 增加額外欄位（避免破壞既有解析），依賴關係寫在這張表。
+- 每個 subagent 動手前都要載入 `coding-standards`，並遵守「一個 commit 只做一件事」。
+
 ## 決策與理由
 
 - `rpmbuild` + 自寫 spec（使用者已確認）。
@@ -75,7 +99,7 @@ F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedor
 
 ## 給下一個 session
 
-1. 沒有未決問題（questions 已清空），從 F1 開始；F9 查到的倉庫 scrcpy 版本要回寫到 F10 的 README，尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
+1. 沒有未決問題（questions 已清空）。先做 F11，再依「平行執行」表開兩個 worktree subagent 同時做 rpm 與 deb 軌道；F9 查到的倉庫 scrcpy 版本要回寫到 F10 的 README，尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
 2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
