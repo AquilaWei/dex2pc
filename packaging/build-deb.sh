@@ -41,15 +41,15 @@ install -D -m 0644 packaging/common/dex2pc.desktop "$pkg/usr/share/applications/
 install -D -m 0644 README.md "$pkg/usr/share/doc/dex2pc/README.md"
 install -D -m 0644 packaging/deb/copyright "$pkg/usr/share/doc/dex2pc/copyright"
 
-# Debian 要求的 changelog；日期取最後一次 commit 的時間，同樣的 commit 建出同樣的內容
+# Debian 要求的 changelog；日期取最後一次 commit 的時間，同樣的 commit 建出同樣的內容（沒有 Debian revision 的 native 套件，檔名是 changelog.gz）
 # 先放進變數：寫在管線裡 git 失敗會被吞掉，changelog 就少了日期
 commit_date=$(git log -1 --format=%cD)
 {
     printf 'dex2pc (%s) unstable; urgency=medium\n\n' "$version"
     printf '  * Release %s. See CHANGELOG.md in the source tree for details.\n\n' "$version"
     printf ' -- %s  %s\n' "$maintainer" "$commit_date"
-} | gzip -9n >"$pkg/usr/share/doc/dex2pc/changelog.Debian.gz"
-chmod 0644 "$pkg/usr/share/doc/dex2pc/changelog.Debian.gz"
+} | gzip -9n >"$pkg/usr/share/doc/dex2pc/changelog.gz"
+chmod 0644 "$pkg/usr/share/doc/dex2pc/changelog.gz"
 
 # 同上，du 不接管線；輸出是「大小<TAB>路徑」，只留開頭的數字
 size_line=$(du -sk "$pkg")

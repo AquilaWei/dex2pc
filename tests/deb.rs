@@ -216,7 +216,7 @@ fn deb_installs_binary_desktop_file_readme_copyright_and_changelog() {
         "./usr/share/applications/dex2pc.desktop",
         "./usr/share/doc/dex2pc/README.md",
         "./usr/share/doc/dex2pc/copyright",
-        "./usr/share/doc/dex2pc/changelog.Debian.gz",
+        "./usr/share/doc/dex2pc/changelog.gz",
     ] {
         assert!(
             listing.lines().any(|line| line.ends_with(expected)),
@@ -252,11 +252,7 @@ fn deb_changelog_trailer_carries_date_of_last_commit() {
     assert!(output.status.success(), "{output:?}");
     let changelog = Command::new("gzip")
         .args(["-dc"])
-        .arg(
-            extract
-                .path()
-                .join("usr/share/doc/dex2pc/changelog.Debian.gz"),
-        )
+        .arg(extract.path().join("usr/share/doc/dex2pc/changelog.gz"))
         .output()
         .unwrap();
     assert!(changelog.status.success(), "{changelog:?}");
@@ -395,6 +391,16 @@ fn deb_depends_cover_every_shared_library_the_binary_needs() {
     let depends = field("Depends").unwrap();
     assert!(depends.contains("libc6"), "{depends}");
     assert!(depends.contains("libgcc-s1"), "{depends}");
+}
+
+#[test]
+fn packaging_readme_documents_the_deb_container_smoke_test_and_fake_scrcpy() {
+    let readme = std::fs::read_to_string(Path::new(ROOT).join("packaging/README.md")).unwrap();
+
+    assert!(readme.contains("packaging/smoke-test-deb.sh debian:13"));
+    assert!(readme.contains("packaging/smoke-test-deb.sh ubuntu:26.04"));
+    assert!(readme.contains("Debian 13 沒有 scrcpy"));
+    assert!(readme.contains("FAKE"));
 }
 
 #[test]

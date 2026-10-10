@@ -177,3 +177,12 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 下一步：F9（Debian／Ubuntu 容器煙霧測試）；rpm 軌道剩 F5（文件）。
 
 - 修正（審查）：`build-deb.sh` 在非 x86_64 主機直接拒絕，並在打包前用 `readelf -h` 確認執行檔是 x86-64；`tests/deb.rs` 新增 3 個測試（套件內執行檔的 ELF 架構、非 x86_64 主機拒絕、非 x86-64 執行檔拒絕）。
+
+- F9 完成（deb 容器煙霧測試）：
+  - 新增 `packaging/smoke-test-deb.sh <映像> [deb]`（外層：引擎、拉映像、掛載；短名稱補成 `docker.io/library/…`）與 `smoke-test-deb-inner.sh`（容器內：`apt-get update` → 回報倉庫 scrcpy 版本 → 必要時 equivs 假 scrcpy 3.2 → `apt install` → `--version` → `doctor` → `apt remove` 並確認檔案消失）。退出碼 77 = 連不到網路／倉庫（本機略過、CI 失敗）。
+  - apt 錯誤分類沿用 F3 的兩階段（先找一般失敗證據：404、Unable to locate、unmet dependencies…；沒有才看 DNS／連線／5xx）；內層固定 `LC_ALL=C`；`apt-get update` 加 `APT::Update::Error-Mode=any`，否則部分倉庫抓不到時仍回傳 0。
+  - 實跑結果（本機 podman）：Debian 13 與 Ubuntu 26.04 都通過。**倉庫 scrcpy：Debian 13 沒有；Ubuntu 26.04 是 3.3.4-1**。Debian 13 走假 scrcpy（輸出有註明），所以那裡 `doctor` 回報缺 scrcpy 是預期。
+  - 發現：Debian 13／Ubuntu 26.04 沒有名為 `android-tools-adb` 的真套件，是 `adb` Provides 它；`Depends: android-tools-adb` 能被 apt 滿足（實測安裝成功），README 已註明。
+  - lintian（Debian 13 容器）：0 error；抓到 native 套件的 changelog 應叫 `changelog.gz`，已從 `changelog.Debian.gz` 改名（build-deb.sh、tests/deb.rs）；剩 `no-manual-page` warning。
+  - 測試：`tests/smoke_deb_logic.rs`（31 個，假 apt-get／apt-cache／dpkg／equivs-build／dex2pc／podman），變異檢查：把 scrcpy 版本比較 `ge` 改 `gt` 會讓「剛好等於下限」測試失敗；`tests/deb.rs` +1（README 內容）。
+  - 下一步：F4（GitHub Actions）；F5、F10 文件；F6 實機。

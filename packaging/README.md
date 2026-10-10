@@ -9,6 +9,7 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 | `rpm/` | `dex2pc.spec`、`dex2pc.rpmlintrc`；用 `build-rpm.sh` 建置 |
 | `deb/` | `copyright`；用 `build-deb.sh` 建置 |
 | `smoke-test.sh` | 在 Fedora 容器內安裝 rpm 並啟動驗證 |
+| `smoke-test-deb.sh` | 在 Debian / Ubuntu 容器內安裝 deb 並啟動驗證（`<映像>` 參數） |
 
 輸出一律放到專案根目錄的 `dist/`（已被 git 忽略）。
 
@@ -18,15 +19,34 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 
 | 需要 | Fedora（rpm） | Debian / Ubuntu（deb） |
 |------|---------------|------------------------|
-| adb | `android-tools` | `android-tools-adb` |
+| adb | `android-tools` | `android-tools-adb`（在 Debian 13 / Ubuntu 26.04 由 `adb` 套件 Provides，`apt` 會自動選它） |
 | scrcpy 3.2 以上（強制相依） | `scrcpy >= 3.2`（COPR `zeno/scrcpy`） | `scrcpy (>= 3.2)` |
 | C 函式庫 | 由 rpm 自動產生 | `libc6`、`libgcc-s1` |
 | 授權檔 | `/usr/share/licenses/dex2pc/LICENSE` | `/usr/share/doc/dex2pc/copyright`（指向 `/usr/share/common-licenses/Apache-2.0`） |
 
 - **scrcpy 的最低版本寫在三個地方**，要一起改：`src/doctor.rs` 的 `MIN_SCRCPY`、`rpm/dex2pc.spec` 的 `Requires`、`build-deb.sh` 的 `min_scrcpy`。
   `tests/rpm_contents.rs` 與 `tests/deb.rs` 會檢查它們一致。
-- Debian / Ubuntu 倉庫的 scrcpy 常低於 3.2；這時 `apt install` 會因為強制相依而失敗，使用者要先取得新版 scrcpy（README 的安裝段落說明，F10）。
+- 實測的倉庫 scrcpy 版本（`smoke-test-deb.sh` 會在輸出回報）：**Debian 13 沒有 scrcpy**；**Ubuntu 26.04 是 3.3.4-1（universe）**，夠新。
+  Debian 13 上 `apt install` 會因為強制相依而失敗，使用者要先取得 scrcpy 3.2 以上（README 的安裝段落說明，F10）。
+- 其他發行版的倉庫 scrcpy 低於 3.2 時同樣會安裝失敗，處理方式相同。
 - 版號沒有 Debian revision（`0.2.0`，不是 `0.2.0-1`）：套件由上游自己建置，不另外維護 Debian 補丁。
+
+## deb 的容器驗證
+
+```bash
+packaging/build-deb.sh
+packaging/smoke-test-deb.sh debian:13
+packaging/smoke-test-deb.sh ubuntu:26.04
+```
+
+容器內依序做 `apt install ./dex2pc_*.deb` → `dex2pc --version` → `dex2pc doctor` → `apt remove`。
+
+- **假 scrcpy**：倉庫的 scrcpy 不到 3.2（含 Debian 13 沒有）時，腳本用 `equivs` 建一個版本 3.2 的空套件，名稱和描述都標明 FAKE，輸出也會註明。
+  它只證明 dex2pc 的相依能被滿足，不代表 scrcpy 能用；所以 Debian 13 上 `dex2pc doctor` 會回報「缺少 scrcpy」，這是預期的。
+- **`doctor` 的安裝提示仍是 Fedora 指令**（`sudo dnf copr enable zeno/scrcpy …`），Debian / Ubuntu 使用者看到時要自行換成 `apt`；這是已決定的範圍，不是 bug。
+- 沒有 podman / docker、拉不到映像或連不到套件倉庫時，本機印出原因並 exit 0（略過）；設了 `CI` 環境變數則失敗。
+- `lintian`（Debian 13 容器內）對這個 deb 沒有 error，只剩一個 warning：`no-manual-page`（沒有 man page）。
+  這次用它檢查時抓到 `changelog.Debian.gz` 的檔名不符 native 套件規則，已改為 `changelog.gz`。lintian 目前沒有放進腳本或 CI。
 
 ## 建置方式的選擇
 

@@ -65,7 +65,7 @@
         "沒有容器引擎時本機明確略過（exit 0）；CI 一定要跑",
         "腳本回報各映像檔倉庫實際的 scrcpy 版本，作為 README（F10）說明取得方式的依據"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F4",
