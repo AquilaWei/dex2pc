@@ -373,7 +373,13 @@ mod tests {
 
         assert_eq!(
             build_args(&options, None),
-            ["--new-display=2560x1440/160", "--window-title=Samsung DeX"]
+            [
+                "--new-display=2560x1440/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+            ]
         );
     }
 
@@ -402,6 +408,8 @@ mod tests {
                 "--no-audio",
                 "--keyboard=uhid",
                 "--mouse=aoa",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -558,7 +566,13 @@ mod tests {
 
         assert_eq!(
             build_args(&options, None),
-            ["--new-display=3840x2160/160", "--window-title=Samsung DeX"]
+            [
+                "--new-display=3840x2160/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+            ]
         );
     }
 
@@ -600,6 +614,8 @@ mod tests {
                 "--no-audio",
                 "--keyboard=uhid",
                 "--mouse=sdk",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -615,7 +631,13 @@ mod tests {
 
         assert_eq!(
             build_args(&options, None),
-            ["--new-display=1920x1080/160", "--window-title=Samsung DeX"]
+            [
+                "--new-display=1920x1080/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+            ]
         );
     }
 
@@ -664,7 +686,7 @@ mod tests {
              dpi = 160\n\
              video_bit_rate = （scrcpy 預設）\n\
              audio = true\n\
-             keyboard = （scrcpy 預設）\n\
+             keyboard = uhid\n\
              mouse = （scrcpy 預設）\n\
              window_title = Samsung DeX\n"
         );

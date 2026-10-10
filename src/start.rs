@@ -315,7 +315,7 @@ mod tests {
                 "scrcpy --version".to_string(),
                 "adb devices -l".to_string(),
                 "adb -s R5CW1234ABC shell getprop".to_string(),
-                "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX"
+                "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
                     .to_string(),
             ]
         );
@@ -334,7 +334,7 @@ mod tests {
 
         assert_eq!(
             runner.calls.borrow().last().unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --video-bit-rate=16M --no-audio"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
         );
     }
 
@@ -354,7 +354,7 @@ mod tests {
         let (_, out) = start(&runner, &Options::default());
 
         assert!(out.ends_with(
-            "啟動：scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX'\n"
+            "啟動：scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
         ));
     }
 
@@ -512,8 +512,7 @@ mod tests {
         }
     }
 
-    const LAUNCH: &str =
-        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX";
+    const LAUNCH: &str = "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local";
     const WAIT: &str = "adb -s R5CW1234ABC wait-for-device";
 
     fn watch(runner: &WatchRunner) -> (u8, String) {
@@ -707,7 +706,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX'\n"
+            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
         );
     }
 
@@ -719,7 +718,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX'\n"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
         );
     }
 

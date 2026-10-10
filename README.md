@@ -125,8 +125,8 @@ resolution = "1920x1080"   # 虛擬顯示器解析度
 dpi = 160                  # 數字越大介面越大
 video_bit_rate = "16M"     # 省略時用 scrcpy 預設（8M）；小字模糊時調高
 audio = true               # false 時不轉送手機音訊
-keyboard = "uhid"          # sdk、uhid、aoa、disabled；省略時用 scrcpy 預設
-mouse = "sdk"              # 同上
+keyboard = "uhid"          # sdk、uhid、aoa、disabled；省略時用 uhid（sdk 在 DeX 上打不出字）
+mouse = "sdk"              # 同上；省略時用 scrcpy 預設
 window_title = "Samsung DeX"
 ```
 
@@ -150,10 +150,10 @@ cargo run --example sync_version_badge
 
 - [x] `dex2pc doctor` 正確列出手機型號、One UI 版本、USB 速度（Galaxy S23、One UI 8.5，2026-10-10）
 - [x] `dex2pc start` 開出的虛擬顯示器是 **DeX 桌面**（同上，以 `adb screencap` 確認畫面內容）
-- [ ] **滑鼠**：點擊、右鍵、拖曳、滾輪捲動
-- [ ] **鍵盤**：英文輸入、快捷鍵、**中文輸入**（用電腦的輸入法打字能否送進手機）
-- [ ] **剪貼簿**：電腦與手機之間複製貼上
-- [ ] **音訊**：手機的聲音從電腦播出；`--no-audio` 時不播
+- [x] **滑鼠**：點擊、右鍵、拖曳、滾輪捲動（2026-10-10；右鍵會傳給手機，**Shift+右鍵**是返回）
+- [ ] **鍵盤**：英文輸入、快捷鍵、**中文輸入**（用電腦的輸入法打字能否送進手機）；2026-10-10 確認能打字，中文輸入與快捷鍵待確認
+- [x] **剪貼簿**：電腦與手機之間複製貼上（2026-10-10）
+- [x] **音訊**：手機的聲音從電腦播出（2026-10-10）；`--no-audio` 時不播
 - [ ] **拔線重連**：`dex2pc start --watch` 時拔掉再接回 USB 線，視窗會自動重新開啟
 - [ ] **小字清晰度與操作延遲**：小字模糊時用 `--video-bit-rate 16M`（或更高）再試，回報是否改善
 - [ ] 應用程式選單的「Samsung DeX」捷徑能開啟視窗

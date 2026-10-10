@@ -207,7 +207,7 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
     );
 }
 
@@ -269,7 +269,7 @@ esac
             "scrcpy --version",
             "adb devices -l",
             "adb -s R5CW1234ABC shell getprop",
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX",
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local",
         ]
     );
 }

@@ -149,7 +149,7 @@ pub struct Options {
     /// 例如 `16M`；`None` 時不加參數，沿用 scrcpy 預設（8M）。原樣傳給 scrcpy，由它檢查格式。
     pub video_bit_rate: Option<String>,
     pub audio: bool,
-    /// `None` 時不加參數，沿用 scrcpy 預設。
+    /// `None` 時不加參數，沿用 scrcpy 預設（sdk）。
     pub keyboard: Option<InputMode>,
     /// `None` 時不加參數，沿用 scrcpy 預設。
     pub mouse: Option<InputMode>,
@@ -157,6 +157,9 @@ pub struct Options {
 
 impl Default for Options {
     /// 1920x1080/160 是暫定值，等實機回饋 DeX 介面大小後再調。
+    ///
+    /// 鍵盤預設 uhid：實機（One UI 8.5、scrcpy 5.0.1）上 scrcpy 預設的 sdk 鍵盤在 DeX 虛擬顯示器打不出字，
+    /// 剪貼簿的 Ctrl+V 也跟著失效；改成 uhid 後兩者都正常。
     fn default() -> Self {
         Self {
             resolution: Resolution {
@@ -167,7 +170,7 @@ impl Default for Options {
             window_title: "Samsung DeX".to_string(),
             video_bit_rate: None,
             audio: true,
-            keyboard: None,
+            keyboard: Some(InputMode::Uhid),
             mouse: None,
         }
     }
@@ -200,6 +203,11 @@ pub fn build_args(options: &Options, serial: Option<&str>) -> Vec<String> {
     if let Some(mode) = options.mouse {
         args.push(format!("--mouse={}", mode.as_arg()));
     }
+    // sdk 滑鼠的預設綁定把右鍵當成「返回」，DeX 桌面就沒有右鍵選單；改成右鍵與中鍵都傳給手機，
+    // 按住 Shift 時才是返回與 Home。uhid、aoa 滑鼠的預設本來就是這樣，所以一律加上
+    args.push("--mouse-bind=++++:bhsn".to_string());
+    // 讓輸入法（含中文選字窗）顯示在 DeX 視窗裡，而不是手機螢幕上
+    args.push("--display-ime-policy=local".to_string());
     args
 }
 
@@ -208,12 +216,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_args_with_defaults_creates_1080p_dex_display() {
+    fn build_args_with_defaults_creates_1080p_dex_display_with_dex_input() {
         let args = build_args(&Options::default(), None);
 
         assert_eq!(
             args,
-            ["--new-display=1920x1080/160", "--window-title=Samsung DeX"]
+            [
+                "--new-display=1920x1080/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+            ]
         );
     }
 
@@ -227,14 +241,17 @@ mod tests {
                 "--serial=R5CW1234ABC",
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
 
     #[test]
-    fn build_args_with_uhid_keyboard_adds_keyboard_mode() {
+    fn build_args_with_sdk_keyboard_adds_keyboard_sdk() {
         let options = Options {
-            keyboard: Some(InputMode::Uhid),
+            keyboard: Some(InputMode::Sdk),
             ..Options::default()
         };
 
@@ -243,7 +260,27 @@ mod tests {
             [
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
-                "--keyboard=uhid",
+                "--keyboard=sdk",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+            ]
+        );
+    }
+
+    #[test]
+    fn build_args_without_keyboard_mode_omits_keyboard_flag() {
+        let options = Options {
+            keyboard: None,
+            ..Options::default()
+        };
+
+        assert_eq!(
+            build_args(&options, None),
+            [
+                "--new-display=1920x1080/160",
+                "--window-title=Samsung DeX",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -260,7 +297,10 @@ mod tests {
             [
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
+                "--keyboard=uhid",
                 "--mouse=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -278,6 +318,9 @@ mod tests {
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
                 "--no-audio",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -295,6 +338,9 @@ mod tests {
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
                 "--video-bit-rate=16M",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -321,6 +367,8 @@ mod tests {
                 "--no-audio",
                 "--keyboard=aoa",
                 "--mouse=sdk",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }
@@ -338,6 +386,8 @@ mod tests {
                 "--new-display=1920x1080/160",
                 "--window-title=Samsung DeX",
                 "--keyboard=disabled",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
             ]
         );
     }

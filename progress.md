@@ -192,6 +192,13 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
   - Fedora 上 scrcpy 的建議安裝來源（COPR 或其他），F2 實作時查證，不要憑記憶寫。
 - 使用者回答剩下的 question 後可能要調整：是否只要教學、不做工具。
 
+- **2026-10-10 實機驗收（使用者）**：音訊正常；滑鼠右鍵、鍵盤、剪貼簿原本失效。
+  依 `scrcpy --help`：sdk 滑鼠預設把右鍵綁成返回（`bhsn`）。改用
+  `--keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local` 後使用者確認右鍵、打字、剪貼簿都正常，
+  所以 `Options::default` 鍵盤改 uhid，`build_args` 一律加 mouse-bind 與 IME policy。
+  **待確認**：中文輸入、快捷鍵、Ctrl+C、桌面捷徑；**拔線重連失敗**（使用者描述「程式馬上就崩潰」，
+  還沒拿到終端機輸出，不確定當時有沒有加 `--watch`）。
+
 ## 狀態
 
 | 功能 | 狀態 |
