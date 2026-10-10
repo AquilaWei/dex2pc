@@ -1,0 +1,16 @@
+# 專案本體是 Rust（見 Cargo.toml）。這個檔案只是讓外部 harness 固定使用的
+# `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`
+# 能跑起來：pytest 唯一的測試會執行真正的 cargo 檢查指令。
+[project]
+name = "dex2pc-harness"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "ruff>=0.16.10"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
