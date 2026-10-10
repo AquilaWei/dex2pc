@@ -274,10 +274,17 @@ fn smoke_test_installs_runs_and_removes_rpm_in_fedora_container() {
         return;
     };
 
-    // 沒有容器引擎或連不到 COPR 時，腳本本機 exit 0（略過）、CI 上 exit 1，所以這裡一律要求成功
+    // 沒有容器引擎、拉不到映像或連不到 COPR 時，腳本本機 exit 0 但沒有真的跑，CI 上則 exit 1
     let output = smoke_test(Some(rpm), &[], None);
 
     assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    if stderr.contains("略過") {
+        eprintln!("smoke-test 本機略過，未實際執行：{stderr}");
+        return;
+    }
+    assert!(stdout.contains("== smoke test 通過"), "{stdout}");
 }
 
 /// 只放 `sh` 與 `dirname` 的 PATH，沒有 podman 也沒有 docker。
