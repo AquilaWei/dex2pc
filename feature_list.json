@@ -43,7 +43,7 @@
         "`dnf remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
         "沒有容器引擎或連不到 COPR 時，本機以明確訊息略過（exit 0）；CI 一定要跑，不可略過"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F8",

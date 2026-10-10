@@ -138,3 +138,12 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   解包函式 `extract_rpm` 同時檢查 rpm2cpio 與 cpio 的退出狀態（壞掉的 rpm 會讓 cpio 讀到空輸入而成功），有回歸測試。
   共用的 build 產物改放在每個測試程式專屬的 tempdir，由 static fixture 持有；不再使用固定的 `target/rpm-contents-dist`，也沒有吞掉的清理錯誤。
   取捨：static 不會 drop，暫存目錄（約 1 MB）留在系統暫存區由 OS 清理。
+
+- **F3 完成**（2026-10-10）：`packaging/smoke-test.sh [rpm]`：在 `registry.fedoraproject.org/fedora:latest`（可用 `DEX2PC_SMOKE_IMAGE` 換）容器內
+  安裝 dnf-plugins-core → `dnf copr enable zeno/scrcpy` → `dnf install` 這個 rpm → `dex2pc --version` 對版號 →
+  `dex2pc doctor`（容器沒有手機，預期印出「找不到裝置」且不被訊號殺掉）→ `dnf remove` 後確認 `/usr/bin/dex2pc` 與 `.desktop` 都消失。
+  - **已在本機實跑通過**（podman、Fedora 44 映像；COPR zeno/scrcpy 目前提供 scrcpy 5.0.1，滿足 `>= 3.2`；`cargo build --locked` 在 build-rpm.sh 於容器外跑，沒有進容器）。
+  - 略過規則：沒有 podman/docker、拉不到映像、容器內連不到 COPR（退出碼 77）→ 本機 exit 0 並印原因；設了 `CI` 則 exit 1。
+  - 測試放在 `tests/rpm_contents.rs`：真的跑一次煙霧測試（共用已建好的 rpm，約 40 秒，要網路），以及「沒有容器引擎」本機略過／CI 失敗兩個測試。
+  - `dnf remove` 會連同為了 scrcpy 裝進來的相依一起移除（約 300 個套件），輸出很長；腳本已加 `-q`。
+  - 下一步：deb 軌道 F8（可與 rpm 軌道的 F5 文件平行），之後 F9。

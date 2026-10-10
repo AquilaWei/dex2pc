@@ -254,3 +254,69 @@ fn rpmlint_reports_no_errors_with_project_filters() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("0 errors, 0 warnings"), "{stdout}");
 }
+
+fn smoke_test(rpm: Option<&Path>, envs: &[(&str, &str)], path: Option<&Path>) -> Output {
+    let mut command = Command::new("sh");
+    command.arg("packaging/smoke-test.sh").current_dir(ROOT);
+    if let Some(rpm) = rpm {
+        command.arg(rpm);
+    }
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
+    command.envs(envs.iter().copied());
+    command.output().unwrap()
+}
+
+#[test]
+fn smoke_test_installs_runs_and_removes_rpm_in_fedora_container() {
+    let Some(rpm) = built_rpm() else {
+        return;
+    };
+
+    // 沒有容器引擎或連不到 COPR 時，腳本本機 exit 0（略過）、CI 上 exit 1，所以這裡一律要求成功
+    let output = smoke_test(Some(rpm), &[], None);
+
+    assert!(output.status.success(), "{output:?}");
+}
+
+/// 只放 `sh` 與 `dirname` 的 PATH，沒有 podman 也沒有 docker。
+fn path_without_container_engines() -> tempfile::TempDir {
+    let bin = tempfile::tempdir().unwrap();
+    for tool in ["sh", "dirname", "awk", "printf"] {
+        let found = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+            .map(|dir| dir.join(tool))
+            .find(|candidate| candidate.is_file())
+            .unwrap();
+        std::os::unix::fs::symlink(found, bin.path().join(tool)).unwrap();
+    }
+    bin
+}
+
+#[test]
+fn smoke_test_skips_with_exit_zero_when_no_container_engine_and_not_in_ci() {
+    let bin = path_without_container_engines();
+
+    let output = smoke_test(None, &[], Some(bin.path()));
+
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("略過：找不到 podman 或 docker")
+    );
+}
+
+#[test]
+fn smoke_test_fails_when_no_container_engine_in_ci() {
+    let bin = path_without_container_engines();
+
+    let output = smoke_test(None, &[("CI", "1")], Some(bin.path()));
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("CI 不可略過")
+    );
+}
