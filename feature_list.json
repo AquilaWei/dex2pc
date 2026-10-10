@@ -19,7 +19,7 @@
         "`rpmspec -P packaging/rpm/dex2pc.spec` 可解析且無錯誤",
         "整合測試（tests/rpm.rs）檢查 spec 的 Version 等於 Cargo.toml 的 version；本機沒有 rpmbuild 時自動略過，CI 一定要跑"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F2",

@@ -111,3 +111,12 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   `.gitignore` 加 `dist/`，測試在 `tests/packaging_common.rs`。完整 verify 通過（fmt、clippy、全部測試）。
   下一步：rpm 軌道（F1）與 deb 軌道（F8）可平行開始。
   `desktop-file-validate` 缺少時測試略過，但設了環境變數 `CI` 就會失敗，CI 要安裝 desktop-file-utils。
+
+- **F1 完成**（2026-10-10）：`packaging/rpm/dex2pc.spec`、`packaging/build-rpm.sh`、`tests/rpm.rs`。
+  - spec 的版號來自 `%{dex2pc_version}`：build-rpm.sh 用 `--define` 傳入 `packaging/common/version.sh` 的結果；
+    直接對 spec 跑 `rpmspec -P`（要在專案根目錄）則自行呼叫同一支腳本，沒有寫死版號。
+  - build-rpm.sh 用 `git ls-files` 打包原始碼（含尚未 commit 的修改）、暫存 `_topdir`，成品複製到 `dist/`；
+    cargo 若不是 rpm 套件（rustup）會自動加 `--nodeps` 並印出提示。
+  - 目前 rpm 只裝 `/usr/bin/dex2pc`；`.desktop`、授權檔、README、`Requires` 都留給 F2。repo 目前沒有 LICENSE 檔，F2 需要處理。
+  - 測試：`tests/rpm.rs` 的 build 測試會真的跑 rpmbuild（約 18 秒，要能下載 crate）；缺 rpmbuild 時本機略過，設了 `CI` 就失敗。
+  - 下一步：F2（rpm 軌道）或 F8（deb 軌道，可平行）。
