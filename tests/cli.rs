@@ -167,6 +167,69 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     );
 }
 
+/// F8 結論：實機確認 DeX 不需要改 adb settings，dex2pc 不得在啟動時呼叫 `adb settings`。
+/// 假的 adb / scrcpy 把每次呼叫寫進同一份 log；未預期的 adb 呼叫（含 settings）會讓 adb 失敗。
+#[test]
+fn start_on_supported_device_never_changes_adb_settings() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let log = bin.path().join("calls.log");
+    let log_path = log.display();
+
+    let adb = format!(
+        r#"#!/bin/sh
+echo "adb $*" >> '{log_path}'
+case "$*" in
+  version) printf 'Android Debug Bridge version 1.0.41\n' ;;
+  "devices -l") printf 'List of devices attached\nR5CW1234ABC  device usb:3-2 product:dm3qxxx model:SM_S918B device:dm3q transport_id:1\n\n' ;;
+  "-s R5CW1234ABC shell getprop") printf '[ro.build.version.oneui]: [80500]\n[ro.build.version.sdk]: [36]\n[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM-S926B]\n' ;;
+  *) echo "unexpected adb call" >&2; exit 1 ;;
+esac
+"#
+    );
+    let scrcpy = format!(
+        r#"#!/bin/sh
+echo "scrcpy $*" >> '{log_path}'
+case "$*" in
+  --version) printf 'scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>\n' ;;
+esac
+"#
+    );
+    for (name, body) in [("adb", adb), ("scrcpy", scrcpy)] {
+        let path = bin.path().join(name);
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let output = dex2pc()
+        .arg("start")
+        .env("XDG_CONFIG_HOME", config.path())
+        .env("PATH", bin.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&log)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>(),
+        vec![
+            "adb version",
+            "scrcpy --version",
+            "adb devices -l",
+            "adb -s R5CW1234ABC shell getprop",
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX",
+        ]
+    );
+}
+
 #[test]
 fn start_without_adb_or_scrcpy_exits_non_zero() {
     let dir = tempfile::tempdir().unwrap();
