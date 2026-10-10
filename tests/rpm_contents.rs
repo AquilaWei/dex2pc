@@ -99,11 +99,9 @@ fn rpm_does_not_merely_recommend_scrcpy() {
     assert_eq!(recommends, "");
 }
 
-#[test]
-fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
-    let Some(rpm) = built_rpm() else {
-        return;
-    };
+/// 把建好的 rpm 解到暫存目錄，回傳目錄；rpm 不存在時回傳 `None`。
+fn extract_built_rpm() -> Option<tempfile::TempDir> {
+    let rpm = built_rpm()?;
     let extract = tempfile::tempdir().unwrap();
     let status = Command::new("sh")
         .args(["-c", r#"rpm2cpio "$1" | cpio -id --quiet"#, "sh"])
@@ -112,6 +110,14 @@ fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
         .status()
         .unwrap();
     assert!(status.success());
+    Some(extract)
+}
+
+#[test]
+fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
+    let Some(extract) = extract_built_rpm() else {
+        return;
+    };
     let desktop = extract.path().join("usr/share/applications/dex2pc.desktop");
 
     let content = std::fs::read_to_string(&desktop).unwrap();
@@ -120,6 +126,50 @@ fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
         return;
     };
     assert!(validate.status.success(), "{validate:?}");
+}
+
+#[test]
+fn packaged_desktop_file_equals_shared_packaging_copy() {
+    let Some(extract) = extract_built_rpm() else {
+        return;
+    };
+
+    let packaged = extract.path().join("usr/share/applications/dex2pc.desktop");
+    assert_eq!(
+        std::fs::read(packaged).unwrap(),
+        std::fs::read(Path::new(ROOT).join("packaging/common/dex2pc.desktop")).unwrap()
+    );
+}
+
+#[test]
+fn packaged_license_and_readme_equal_repo_files() {
+    let Some(extract) = extract_built_rpm() else {
+        return;
+    };
+
+    assert_eq!(
+        std::fs::read(extract.path().join("usr/share/licenses/dex2pc/LICENSE")).unwrap(),
+        std::fs::read(Path::new(ROOT).join("LICENSE")).unwrap()
+    );
+    assert_eq!(
+        std::fs::read(extract.path().join("usr/share/doc/dex2pc/README.md")).unwrap(),
+        std::fs::read(Path::new(ROOT).join("README.md")).unwrap()
+    );
+}
+
+#[test]
+fn spec_scrcpy_requirement_matches_min_scrcpy_in_doctor() {
+    // doctor.rs 是程式內檢查的版本；spec 的 Requires 要跟它一樣，一邊改另一邊要跟著改
+    let doctor = std::fs::read_to_string(Path::new(ROOT).join("src/doctor.rs")).unwrap();
+    let spec = std::fs::read_to_string(Path::new(ROOT).join("packaging/rpm/dex2pc.spec")).unwrap();
+
+    assert!(doctor.contains("pub const MIN_SCRCPY: Version = Version(3, 2, 0);"));
+    assert!(spec.lines().any(|line| line.split_whitespace().eq([
+        "Requires:",
+        "scrcpy",
+        ">=",
+        "3.2"
+    ])));
 }
 
 #[test]
