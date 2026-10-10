@@ -7,7 +7,16 @@ const GITIGNORE: &str = include_str!("../.gitignore");
 const DESKTOP: &str = include_str!("../packaging/common/dex2pc.desktop");
 
 fn version_sh(dir: &Path) -> String {
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/packaging/common/version.sh");
+    run_version_sh(
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/packaging/common/version.sh"
+        )),
+        dir,
+    )
+}
+
+fn run_version_sh(script: &Path, dir: &Path) -> String {
     let output = Command::new("sh")
         .arg(script)
         .current_dir(dir)
@@ -31,6 +40,38 @@ fn version_script_gives_same_result_from_another_working_directory() {
         version_sh(Path::new("/")),
         concat!(env!("CARGO_PKG_VERSION"), "\n")
     );
+}
+
+#[test]
+fn version_script_ignores_version_key_in_dependency_table() {
+    let root = tempfile::tempdir().unwrap();
+    let common = root.path().join("packaging/common");
+    std::fs::create_dir_all(&common).unwrap();
+    std::fs::copy(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/packaging/common/version.sh"),
+        common.join("version.sh"),
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("Cargo.toml"),
+        "[dependencies.foo]\nversion = \"9.9.9\"\n\n[package]\nname = \"x\"\nversion = \"1.2.3\"\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        run_version_sh(&common.join("version.sh"), root.path()),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn gitignore_ignores_files_inside_dist_directory() {
+    let status = Command::new("git")
+        .args(["check-ignore", "-q", "dist/dex2pc-0.2.0.rpm"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .status()
+        .unwrap();
+    assert!(status.success(), "dist/ 內的檔案應被 .gitignore 排除");
 }
 
 #[test]
