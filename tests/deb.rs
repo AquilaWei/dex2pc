@@ -226,6 +226,57 @@ fn deb_installs_binary_desktop_file_readme_copyright_and_changelog() {
 }
 
 #[test]
+fn deb_control_reports_installed_size_as_a_number() {
+    let Some(size) = field("Installed-Size") else {
+        return;
+    };
+
+    let size = size.trim();
+    assert!(!size.is_empty(), "Installed-Size 是空的");
+    assert!(size.bytes().all(|b| b.is_ascii_digit()), "{size:?}");
+    assert!(size.parse::<u64>().unwrap() > 0, "{size:?}");
+}
+
+#[test]
+fn deb_changelog_trailer_carries_date_of_last_commit() {
+    let Some(deb) = built_deb() else {
+        return;
+    };
+    let extract = tempfile::tempdir().unwrap();
+    let output = Command::new("dpkg-deb")
+        .arg("-x")
+        .arg(deb)
+        .arg(extract.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let changelog = Command::new("gzip")
+        .args(["-dc"])
+        .arg(
+            extract
+                .path()
+                .join("usr/share/doc/dex2pc/changelog.Debian.gz"),
+        )
+        .output()
+        .unwrap();
+    assert!(changelog.status.success(), "{changelog:?}");
+    let changelog = String::from_utf8(changelog.stdout).unwrap();
+    let commit_date = Command::new("git")
+        .args(["log", "-1", "--format=%cD"])
+        .current_dir(ROOT)
+        .output()
+        .unwrap();
+    assert!(commit_date.status.success(), "{commit_date:?}");
+    let commit_date = String::from_utf8(commit_date.stdout).unwrap();
+
+    let trailer = changelog.lines().last().unwrap();
+    assert!(
+        trailer.ends_with(&format!("  {}", commit_date.trim())),
+        "trailer 沒有最後一次 commit 的日期\n{changelog}"
+    );
+}
+
+#[test]
 fn deb_contains_no_build_output_and_files_are_owned_by_root() {
     let Some(listing) = dpkg_deb(&["-c"]) else {
         return;
