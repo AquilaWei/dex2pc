@@ -186,3 +186,21 @@ fn desktop_file_passes_desktop_file_validate() {
 fn gitignore_excludes_dist_directory() {
     assert!(GITIGNORE.lines().any(|line| line == "dist/"));
 }
+
+#[test]
+fn version_script_reads_cargo_toml_with_crlf_line_endings() {
+    assert_eq!(
+        stdout_of_successful_version_sh(
+            "[package]\r\nname = \"x\"\r\nversion = \"1.2.3\"\r\n\r\n[dependencies]\r\n"
+        ),
+        "1.2.3\n"
+    );
+}
+
+#[test]
+fn version_script_reads_crlf_package_header_followed_by_comment() {
+    assert_eq!(
+        stdout_of_successful_version_sh("[package] # c\r\nversion = '1.2.3' # d\r\n"),
+        "1.2.3\n"
+    );
+}
