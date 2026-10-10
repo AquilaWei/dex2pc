@@ -17,7 +17,7 @@
 ## 計畫
 
 F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
-→ F4 GitHub Actions 建置與發佈（SHA256）→ F5 README/CHANGELOG → F8 deb 建置 → F9 Debian/Ubuntu 容器煙霧測試 → F4 CI 與發佈（rpm+deb）→ F5 rpm 文件 → F10 deb 文件 → F6 實機驗收。
+→ F8 deb 建置 → F9 Debian/Ubuntu 容器煙霧測試 → F4 CI 與發佈（rpm+deb）→ F5 rpm 文件 → F10 deb 文件 → F6 實機驗收。
 
 ## 使用者回覆（2026-10-10）
 
