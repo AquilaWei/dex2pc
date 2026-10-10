@@ -42,14 +42,18 @@ install -D -m 0644 README.md "$pkg/usr/share/doc/dex2pc/README.md"
 install -D -m 0644 packaging/deb/copyright "$pkg/usr/share/doc/dex2pc/copyright"
 
 # Debian 要求的 changelog；日期取最後一次 commit 的時間，同樣的 commit 建出同樣的內容
+# 先放進變數：寫在管線裡 git 失敗會被吞掉，changelog 就少了日期
+commit_date=$(git log -1 --format=%cD)
 {
     printf 'dex2pc (%s) unstable; urgency=medium\n\n' "$version"
     printf '  * Release %s. See CHANGELOG.md in the source tree for details.\n\n' "$version"
-    printf ' -- %s  %s\n' "$maintainer" "$(git log -1 --format=%cD)"
+    printf ' -- %s  %s\n' "$maintainer" "$commit_date"
 } | gzip -9n >"$pkg/usr/share/doc/dex2pc/changelog.Debian.gz"
 chmod 0644 "$pkg/usr/share/doc/dex2pc/changelog.Debian.gz"
 
-installed_size=$(du -sk "$pkg" | cut -f1)
+# 同上，du 不接管線；輸出是「大小<TAB>路徑」，只留開頭的數字
+size_line=$(du -sk "$pkg")
+installed_size=${size_line%%[!0-9]*}
 mkdir -p "$pkg/DEBIAN"
 # Depends：adb 與 scrcpy 是強制相依。scrcpy 不夠新時 apt 會拒絕安裝，README 說明如何取得新版
 cat >"$pkg/DEBIAN/control" <<CONTROL
