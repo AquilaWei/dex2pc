@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 變更
+
+- 已在實機（Galaxy S23、One UI 8.5）確認 `dex2pc start` 直接開出 DeX 桌面，**手機端不需要另外設定**；README 改寫為確認結果
+
 ### 修正
 
 - `dex2pc install-desktop`：dex2pc 的路徑含換行或 tab 時也能建立有效的捷徑；含其他無法寫進捷徑的控制字元時直接報錯，不再產生損壞的捷徑

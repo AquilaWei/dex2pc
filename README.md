@@ -74,7 +74,7 @@ cargo run --release -- start
 
 （已用 `cargo install --path .` 安裝時直接執行 **`dex2pc start`**。）
 
-`start` 會先做和 `doctor` 一樣的檢查，全部通過才以虛擬顯示器開啟 **Samsung DeX** 視窗（DeX 是否直接出現仍待實機驗證）；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
+`start` 會先做和 `doctor` 一樣的檢查，全部通過才以虛擬顯示器開啟 **Samsung DeX** 視窗；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
 有問題時照畫面上的訊息處理，或先跑 `cargo run -- doctor` 看完整檢查結果。
 
 ```bash
@@ -91,12 +91,14 @@ cargo run -- start --watch                 # 拔線或斷線後，手機接回�
 
 ### 手機端需要另外設定嗎？
 
-**目前先不套用手機設定**：除了開啟 USB 偵錯，dex2pc 不會改任何 `adb settings`。
-部分社群教學回報 One UI 8 可直接用 scrcpy 的 `--new-display` 開出 DeX，**本專案仍待實機驗證**。
-[scrcpy 官方文件](https://github.com/Genymobile/scrcpy/blob/master/doc/virtual-display.md)只保證會建立虛擬顯示器，
-並說明部分裝置在虛擬顯示器上沒有 launcher 時畫面會是空白，沒有保證會啟動 DeX。
+**不需要。** 只要開啟 USB 偵錯並允許這台電腦，dex2pc 不會改任何 `adb settings`。
 
-> ⚠️ 如果 `dex2pc start` 開出的視窗是空白或只有一般手機畫面、不是 DeX，
+已在實機確認（2026-10-10）：**Galaxy S23（SM-S9180）、One UI 8.5（Android 16）、scrcpy 5.0.1**，
+`dex2pc start` 建立的 1920x1080/160 虛擬顯示器上直接跑起 DeX 的桌面
+（`com.sec.android.app.launcher/com.honeyspace.dexservice.SecondaryLauncher`，有桌面圖示與工作列），
+scrcpy 結束後虛擬顯示器也跟著移除。
+
+> ⚠️ 其他機型若開出的視窗是空白或只有一般手機畫面、不是 DeX，
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
 
 ## 建置與執行
@@ -146,8 +148,8 @@ cargo run --example sync_version_badge
 
 以下項目**只能在實機上確認**，自動測試都是用假的 adb / scrcpy 輸出，沒有驗證過。試用後請回報哪些可以、哪些不行：
 
-- [ ] `dex2pc doctor` 正確列出手機型號、One UI 版本、USB 速度
-- [ ] `dex2pc start` 開出的視窗是 **DeX 桌面**（不是空白、也不是一般手機畫面）
+- [x] `dex2pc doctor` 正確列出手機型號、One UI 版本、USB 速度（Galaxy S23、One UI 8.5，2026-10-10）
+- [x] `dex2pc start` 開出的虛擬顯示器是 **DeX 桌面**（同上，以 `adb screencap` 確認畫面內容）
 - [ ] **滑鼠**：點擊、右鍵、拖曳、滾輪捲動
 - [ ] **鍵盤**：英文輸入、快捷鍵、**中文輸入**（用電腦的輸入法打字能否送進手機）
 - [ ] **剪貼簿**：電腦與手機之間複製貼上
@@ -183,6 +185,6 @@ cargo run --example sync_version_badge
 
 [scrcpy](https://github.com/Genymobile/scrcpy) 是 Genymobile 開發的**開源免費**工具（Apache 2.0）。
 它經 ADB 在手機上暫時跑一個小程式，負責畫面串流、在電腦上開視窗、轉送鍵鼠事件；
-**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器，dex2pc 預期 DeX 會跑在上面（待實機驗證，見上方「手機端需要另外設定嗎？」）。
+**不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器，One UI 8 起 DeX 會直接跑在上面（已在實機確認，見上方「手機端需要另外設定嗎？」）。
 
 dex2pc **不重寫**這些部分，只負責檢查環境、組好 scrcpy 參數、一鍵啟動。

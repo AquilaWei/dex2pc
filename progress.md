@@ -65,7 +65,17 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 
 ## 給下一個 session 的注意事項
 
-- **目前只剩 F8**，它在等使用者用實機回報 DeX 是否直接出現（見下方 F8 調查）。沒有回報前不要重做調查，也沒有其他功能可做。
+- **所有功能都已完成**（F8 於 2026-10-10 實機確認後標 true）。
+- **2026-10-10 實機驗證**（使用者授權手機並安裝 scrcpy 5.0.1 後）：
+  - 手機：Galaxy S23（`SM-S9180`）、Android 16（SDK 36）、`ro.build.version.oneui` = `80500`（One UI 8.5）。
+  - `dex2pc doctor` 全部通過，輸出與預期一致：getprop 格式、One UI 解析、sysfs USB 速度（這次接在 USB 3 孔，5000 Mbps）都正確。
+  - `dex2pc start` 以 `--new-display=1920x1080/160` 建立虛擬顯示器（`dumpsys display` 的 displayId 7），上面直接跑
+    `com.sec.android.app.launcher/com.honeyspace.dexservice.SecondaryLauncher`（DeX 桌面），**沒有改任何手機設定**。
+    用 `adb exec-out screencap -d <SurfaceFlinger 的 display id> -p` 截圖確認有 DeX 的桌面圖示與工作列
+    （`screencap -d` 要用 `dumpsys SurfaceFlinger --display-id` 列出的 64 位元 id，不是 displayId 7）。
+  - scrcpy 被 `timeout` 結束後，虛擬顯示器自動消失。
+  - 因此 F8 走步驟 1 的「完全不需要」分支：只在 README 記錄結論，不寫套用/還原設定的程式，`passes` 標 true。
+  - 仍未驗：滑鼠鍵盤（含中文輸入）、剪貼簿、音訊、拔線重連、Ctrl+C、桌面捷徑。這些要使用者在電腦前操作，列在 README 實機驗收清單。
 - 2026-10-09 session：本機接著一台 Samsung 手機（lsusb `04e8:6864`，USB 偵錯已開），系統 PATH 沒有 adb，
   但 Android SDK 有 `~/Android/Sdk/platform-tools/adb`；**沒有 scrcpy**。`adb devices -l` 顯示 `unauthorized usb:3-1`，
   要使用者在手機上按「允許 USB 偵錯」才能讀 getprop 或跑 scrcpy，非互動 session 做不到，所以 F8 仍維持 false。
@@ -176,7 +186,7 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 - **實機才驗得出的項目**（不要假裝測過，列給使用者驗收）：DeX 是否真的出現在虛擬顯示器上、
   滑鼠點擊與捲動、鍵盤與中文輸入、剪貼簿、音訊、拔線重連。
 - 不確定的事：
-  - DeX 出現在虛擬顯示器上是否還需要額外的 adb settings 或手機上的開關（F8 就是為此保留的；網路上各教學說法不一）。
+  - ~~DeX 出現在虛擬顯示器上是否還需要額外的 adb settings~~：2026-10-10 實機確認不需要（One UI 8.5）。
   - 預設 DPI：教學有用 160 也有用 284，F5 先用 1920x1080/160，等實機回饋再調。
   - 有教學說需要 scrcpy 4.x 以上；F2 先以 3.0 為下限，實機驗證後可能要調高。
   - Fedora 上 scrcpy 的建議安裝來源（COPR 或其他），F2 實作時查證，不要憑記憶寫。
@@ -194,6 +204,6 @@ sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不�
 | F5 scrcpy 指令組裝 | 完成（2026-10-09） |
 | F6 設定檔 | 完成（2026-10-09；審查後補 `--audio` 雙向覆寫，與 `--no-audio` 同時給時最後一個為準） |
 | F7 start | 完成（2026-10-09；實機未驗收） |
-| F8 手機端設定 | 已調查，README 記錄「暫定不需要」；**等實機確認**（2026-10-09） |
+| F8 手機端設定 | 完成（2026-10-10；實機確認不需要設定，只在 README 記錄結論） |
 | F9 自動重連 | 完成（2026-10-09；實機未驗收） |
 | F10 桌面整合與交付 | 完成（2026-10-09；v0.1.1 測試版，實機未驗收） |

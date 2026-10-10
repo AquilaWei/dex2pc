@@ -113,7 +113,7 @@
         "--keep-settings 時不還原",
         "測試以假的 CommandRunner 驗證呼叫順序：讀原值 → 寫新值 → 啟動 scrcpy → 還原"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F9",
