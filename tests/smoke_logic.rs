@@ -69,11 +69,16 @@ fn path_with_fakes() -> std::ffi::OsString {
 
 fn inner(envs: &[(&str, &str)]) -> Output {
     let empty_root = tempfile::tempdir().unwrap();
+    inner_with_root(empty_root.path(), envs)
+}
+
+/// `root` 代表容器的根目錄，移除後的檢查會看這裡面有沒有殘留檔案。
+fn inner_with_root(root: &Path, envs: &[(&str, &str)]) -> Output {
     Command::new("sh")
         .args(["packaging/smoke-test-inner.sh", "0.2.0", "/pkg/dex2pc.rpm"])
         .current_dir(ROOT)
         .env("PATH", path_with_fakes())
-        .env("SMOKE_ROOT", empty_root.path())
+        .env("SMOKE_ROOT", root)
         .envs(envs.iter().copied())
         .output()
         .unwrap()
@@ -166,6 +171,42 @@ fn inner_exits_1_when_rpm_install_fails_for_a_non_network_reason() {
 
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(stderr(&output).contains("nothing provides scrcpy"));
+}
+
+#[test]
+fn inner_exits_1_when_dnf5_cannot_resolve_transaction_for_a_missing_dependency() {
+    // Fedora 44 的 dnf5 對「依賴裝不上」印的是這段（不是網路問題），要當成一般失敗
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "install"),
+        (
+            "FAKE_FAIL_MESSAGE",
+            "Failed to resolve the transaction:\nNo match for argument: scrcpy",
+        ),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_exits_1_when_dnf_remove_fails() {
+    let output = inner(&[
+        ("FAKE_FAIL_STEP", "remove"),
+        ("FAKE_FAIL_MESSAGE", "Error: something broke"),
+    ]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[test]
+fn inner_fails_when_binary_is_left_behind_after_remove() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("usr/bin")).unwrap();
+    std::fs::write(root.path().join("usr/bin/dex2pc"), b"").unwrap();
+
+    let output = inner_with_root(root.path(), &[]);
+
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(stderr(&output).contains("移除後 /usr/bin/dex2pc 還在"));
 }
 
 #[test]
