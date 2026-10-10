@@ -1,6 +1,7 @@
 //! 建出來的 rpm 裝了什麼、相依什麼、rpmlint 有沒有意見。
 //! 整組測試共用同一次 build-rpm.sh（約 20 秒）；缺工具時本機略過，設了 `CI` 就失敗。
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
@@ -121,8 +122,8 @@ fn rpm_does_not_merely_recommend_scrcpy() {
 
 /// 把 `rpm` 解到 `dest`。`rpm2cpio` 與 `cpio` 兩個行程都要成功，只看 cpio 的話
 /// 壞掉的 rpm（rpm2cpio 失敗、cpio 讀到空輸入）會被當成成功。
-fn extract_rpm(rpm: &Path, dest: &Path) -> Result<(), String> {
-    let mut rpm2cpio = Command::new("rpm2cpio")
+fn extract_rpm(converter: &Path, rpm: &Path, dest: &Path) -> Result<(), String> {
+    let mut rpm2cpio = Command::new(converter)
         .arg(rpm)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -150,20 +151,26 @@ fn extract_rpm(rpm: &Path, dest: &Path) -> Result<(), String> {
 fn extract_built_rpm() -> Option<tempfile::TempDir> {
     let rpm = built_rpm()?;
     let extract = tempfile::tempdir().unwrap();
-    extract_rpm(rpm, extract.path()).unwrap();
+    extract_rpm(Path::new("rpm2cpio"), rpm, extract.path()).unwrap();
     Some(extract)
 }
 
 #[test]
 fn extract_rpm_fails_when_rpm2cpio_fails_even_if_cpio_succeeds() {
-    if !require_tools(&["rpm2cpio", "cpio"]) {
+    if !require_tools(&["cpio"]) {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let not_an_rpm = dir.path().join("broken.rpm");
-    std::fs::write(&not_an_rpm, b"this is not an rpm").unwrap();
+    // 假的 rpm2cpio：輸出一個合法但空的 cpio 歸檔（cpio 會成功），然後以失敗結束
+    let fake = dir.path().join("fake-rpm2cpio");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\ncpio -o --format=newc </dev/null\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let result = extract_rpm(&not_an_rpm, dir.path());
+    let result = extract_rpm(&fake, Path::new("unused.rpm"), dir.path());
 
     assert!(result.is_err(), "{result:?}");
 }
