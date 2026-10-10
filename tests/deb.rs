@@ -392,3 +392,26 @@ fn build_reads_machine_field_even_when_the_host_locale_translates_readelf() {
 
     assert!(output.status.success(), "{output:?}");
 }
+
+#[test]
+fn build_refuses_when_git_cannot_supply_the_changelog_date() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
+        return;
+    }
+
+    // 沒有 git（例如從源碼壓縮檔打包）時拿不到日期；changelog 的 trailer 會沒有日期，這時要失敗而不是產出壞的套件
+    let output = build_with_fake("git", "#!/bin/sh\nexit 1\n");
+
+    assert!(!output.status.success(), "{output:?}");
+}
+
+#[test]
+fn build_refuses_when_du_cannot_measure_installed_size() {
+    if !require_tools(&["dpkg-deb", "cargo", "git", "gzip", "strip", "du", "readelf"]) {
+        return;
+    }
+
+    let output = build_with_fake("du", "#!/bin/sh\nexit 1\n");
+
+    assert!(!output.status.success(), "{output:?}");
+}
