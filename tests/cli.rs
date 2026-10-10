@@ -118,6 +118,50 @@ fn config_with_unknown_field_exits_non_zero_naming_path_and_field() {
 }
 
 #[test]
+fn config_with_string_field_given_integer_exits_non_zero_naming_path_and_field() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(
+        dir.path().join("dex2pc/config.toml"),
+        "video_bit_rate = 16\n",
+    )
+    .unwrap();
+
+    let output = dex2pc()
+        .arg("config")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(&format!(
+        "設定檔 {}/dex2pc/config.toml 的欄位 video_bit_rate：要是字串",
+        dir.path().display()
+    )));
+}
+
+#[test]
+fn config_with_bool_field_given_string_exits_non_zero_naming_path_and_field() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "audio = \"yes\"\n").unwrap();
+
+    let output = dex2pc()
+        .arg("config")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(&format!(
+        "設定檔 {}/dex2pc/config.toml 的欄位 audio：要是 true 或 false",
+        dir.path().display()
+    )));
+}
+
+#[test]
 fn config_with_invalid_resolution_flag_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
 
