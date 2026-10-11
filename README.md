@@ -6,7 +6,7 @@
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
 > 目前狀態：`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
-> 除了 `install-desktop` 的捷徑之外，以上功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**；捷徑**尚未驗收**，細節見「[實機驗收清單](#實機驗收清單)」。
+> 以上功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**，rpm／deb 安裝包附的選單捷徑也已在實體主機確認，細節見「[實機驗收清單](#實機驗收清單)」。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
 ## 運作方式
@@ -249,14 +249,14 @@ cargo run --example sync_version_badge
 - [x] **拔線重連**：`dex2pc start --watch` 時拔掉再接回 USB 線，視窗會自動重新開啟（2026-10-10）
 - [x] **Ctrl+C**：在執行 `dex2pc start --watch` 的終端機按 Ctrl+C，程式結束、視窗關閉、不再重連（2026-10-10）
 - [x] **小字清晰度與操作延遲**：預設位元率下沒有問題（2026-10-10）；小字模糊時可用 `--video-bit-rate 16M`（或更高）
-- [ ] 應用程式選單的「Samsung DeX」捷徑能開啟視窗（暫不驗收）
+- [x] 應用程式選單的「Samsung DeX」捷徑能開啟視窗（2026-10-11，安裝包附的捷徑）
 
-**安裝包**：容器裡只確認過安裝、`--version`、`doctor` 與移除，沒有桌面環境也沒接手機。以下每一項在 **Fedora（rpm）**、**Debian 13（deb）**、**Ubuntu 26.04（deb）** 的實體主機上各做一次：
+**安裝包**：以下每一項在 **Fedora（rpm）**、**Debian 13（deb）**、**Ubuntu 26.04（deb）** 的實體主機上各做一次，使用者已確認全部通過（2026-10-11，0.3.0）：
 
-- [ ] **安裝**：照上方「安裝」的指令裝好，`dex2pc --version` 印出版號
-- [ ] **選單捷徑**：不跑 `dex2pc install-desktop`，應用程式選單就出現「Samsung DeX」（可能要重新登入才會出現）
-- [ ] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
-- [ ] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
+- [x] **安裝**：照上方「安裝」的指令裝好，`dex2pc --version` 印出版號
+- [x] **選單捷徑**：不跑 `dex2pc install-desktop`，應用程式選單就出現「Samsung DeX」（可能要重新登入才會出現）
+- [x] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
+- [x] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
 
 ## 頻寬：USB 2.0 就夠嗎？
 
