@@ -243,6 +243,23 @@ fn readme_install_section_explains_getting_scrcpy_on_debian_13_before_installing
 }
 
 #[test]
+fn readme_debian_scrcpy_steps_use_one_version_for_download_placeholder_and_file_name() {
+    let install = section(README, "\n## 安裝\n");
+
+    // 下載的 tar 版本、佔位套件的 Version、佔位 deb 的檔名要是同一個版本，否則 apt 找不到 scrcpy
+    let download = install.split("scrcpy-linux-x86_64-v").nth(1).unwrap();
+    let version = download.split(".tar.gz").next().unwrap();
+    assert!(
+        install.contains(&format!("Version: {version}\\n")),
+        "佔位套件的 Version 不是 {version}"
+    );
+    assert!(
+        install.contains(&format!("scrcpy_{version}_all.deb")),
+        "佔位 deb 的檔名不是 scrcpy_{version}_all.deb"
+    );
+}
+
+#[test]
 fn readme_install_section_says_doctor_hints_are_fedora_only() {
     let install = section(README, "\n## 安裝\n");
 
