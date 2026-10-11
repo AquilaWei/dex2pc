@@ -233,3 +233,11 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 容器驗證（debian:13，照 README 指令）：先裝 3.3.4 + 佔位 3.3.4 + dex2pc（doctor 顯示 3.3.4）→ 不移除 dex2pc 直接升級到 5.0.1（`scrcpy --version`、`dpkg-query` 的佔位版本、doctor 都是 5.0.1）→ 同版本再做一次也正常；dex2pc 一直維持已安裝。
 
 - F6（實機驗收清單）：README「實機驗收清單」新增「安裝包」段（rpm／deb 安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失，三個發行版各做一次）；progress.md 新增「實機驗收清單」段，另列 GitHub 上才能確認的 CI／Release 項目。**`passes` 維持 false**：功能步驟規定要使用者實機確認後才能標完成，這裡沒有實機可測。
+
+- 0.3.0 發佈（2026-10-11，使用者要求「進版、推到 GitHub」「推 0.3.0」）：
+  - 使用者回報「安裝包測試沒問題」，但沒說是哪幾台主機；README 實機驗收清單的安裝包項目仍未勾，F6 `passes` 維持 false，等使用者說明主機後再勾。
+  - 進版 commit `13f7d10`（Cargo.toml、Cargo.lock、badge、CHANGELOG `[0.3.0]`；測試裡寫死目前版號的預期值一起改成 0.3.0，兩個 CHANGELOG 測試改看 `[0.3.0]` 段）。
+  - 建立公開 repo https://github.com/AquilaWei/dex2pc，push `master`。只推 `v0.3.0` tag；本機舊 tag `v0.1.1`、`v0.2.0` 沒推（推 `v0.2.0` 會觸發 0.2.0 的 Release）。
+  - GitHub 實際結果（對應上方清單 5、7）：push `master` 的 CI run 38110673295 六個 job 全綠，artifact `packages` 有上傳；tag 的 Release run 38111984715 全綠，Release v0.3.0 附 rpm、deb 與兩個 `.sha256`，notes 等於 CHANGELOG 0.3.0 段。
+  - 未確認：清單 6（PATCH 版不建 Release）沒有實際推過 PATCH 版；清單 8 `../../releases` 連結沒點過；Release 檔案的 sha256 沒下載下來比對。
+  - CI 警告：`actions/checkout@v4`、`upload-artifact@v4`、`download-artifact@v4` 用 Node 20（已被強制改跑 Node 24）；`ubuntu-latest` 2026-10-19 起改成 Ubuntu 26。
