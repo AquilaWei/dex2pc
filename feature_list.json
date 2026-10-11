@@ -103,7 +103,7 @@
         "CHANGELOG [Unreleased] 記錄新增 deb 安裝包",
         "版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過"
       ],
-      "passes": false
+      "passes": true
     },
     {
       "id": "F6",

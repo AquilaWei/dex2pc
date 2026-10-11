@@ -1,7 +1,7 @@
 # dex2pc
 
 ![version](https://img.shields.io/badge/version-0.2.0-blue)
-![platform](https://img.shields.io/badge/platform-Fedora%20Linux-294172)
+![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
@@ -39,16 +39,16 @@ flowchart LR
 
 ## 需求
 
-- **電腦**：Fedora Linux（只支援 Linux）
+- **電腦**：Linux，安裝包支援 **Fedora**（rpm）、**Debian 13 / Ubuntu 26.04 以上**（deb）；其他發行版用 `cargo install`
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
-- **adb**：`sudo dnf install android-tools`
-- **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
+- **adb**：Fedora `sudo dnf install android-tools`；Debian / Ubuntu `sudo apt install adb`（用安裝包時會自動裝）
+- **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：Fedora `sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`；Debian / Ubuntu 見下方 deb 安裝
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
-- 建置需要 Rust（cargo）
+- 從原始碼建置才需要 Rust（cargo）；用安裝包不需要
 
 ## 安裝
 
-兩種方式擇一：**rpm 安裝包**（Fedora x86_64，建議）或 **`cargo install`**（從原始碼）。
+三種方式擇一：**rpm 安裝包**（Fedora x86_64）、**deb 安裝包**（Debian 13 / Ubuntu 26.04 以上，amd64），或 **`cargo install`**（從原始碼，其他發行版）。
 
 ### 方式一：rpm 安裝包（Fedora x86_64）
 
@@ -80,7 +80,60 @@ sudo dnf install ./dist/dex2pc-*.rpm
 
 打包的細節見 [`packaging/README.md`](packaging/README.md)。
 
-### 方式二：`cargo install`
+### 方式二：deb 安裝包（Debian 13 / Ubuntu 26.04 以上，amd64）
+
+deb **只支援 Debian 13（trixie）與 Ubuntu 26.04 以上，amd64**。套件強制相依 `android-tools-adb`（由 `adb` 套件提供）與 `scrcpy (>= 3.2)`。
+
+**Ubuntu 26.04**：倉庫的 scrcpy 是 3.3.4，夠新，直接安裝：
+
+```bash
+sudo apt install ./dex2pc_*.deb
+```
+
+**Debian 13**：倉庫**沒有 scrcpy**（trixie、trixie-backports、testing、unstable 都沒有，2026-10 查證），直接 `apt install` 會因為找不到 `scrcpy (>= 3.2)` 而失敗。先裝 scrcpy 官方的靜態版，再建一個「佔位」套件告訴 apt scrcpy 已經裝好：
+
+```bash
+# 1. 官方靜態版（版本號換成 https://github.com/Genymobile/scrcpy/releases/latest 的最新版）
+wget https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz
+tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz
+sudo mv scrcpy-linux-x86_64-v5.0.1 /opt/scrcpy
+sudo ln -sf /opt/scrcpy/scrcpy /usr/local/bin/scrcpy
+scrcpy --version
+
+# 2. 佔位套件：只用來滿足 dex2pc 的 Depends，裡面沒有任何檔案；Version 填上面裝的版本
+sudo apt install equivs
+printf 'Package: scrcpy\nVersion: 5.0.1\nMaintainer: local <root@localhost>\nArchitecture: all\nDescription: placeholder for scrcpy installed in /opt/scrcpy\n' > scrcpy-placeholder
+equivs-build scrcpy-placeholder
+sudo apt install ./scrcpy_5.0.1_all.deb
+
+# 3. 安裝 dex2pc
+sudo apt install ./dex2pc_*.deb
+```
+
+- 以上步驟已在 Debian 13 容器實際跑過：`dex2pc doctor` 會列出 `scrcpy：5.0.1`
+- 更新 scrcpy 時，重做第 1 步，並用新版號重建佔位套件
+- 其他 scrcpy 低於 3.2 的發行版處理方式相同
+
+**共通說明**：
+
+- deb 從 [GitHub Releases](../../releases) 下載，`.sha256` 檔的用法同 rpm；**PATCH 版不發佈 Release**，只有 CI 的 artifact
+- 和 rpm 一樣附好應用程式選單的捷徑，不必再跑 `dex2pc install-desktop`
+- **`dex2pc doctor` 的安裝提示目前只列 Fedora 的 `dnf` 指令**；Debian / Ubuntu 使用者看到時請照這一段 README 安裝，不要照提示執行
+- 移除：
+
+```bash
+sudo apt remove dex2pc
+```
+
+**從原始碼自己建 deb**：
+
+```bash
+sudo apt install cargo git gzip binutils dpkg
+packaging/build-deb.sh                 # 產出 dist/dex2pc_<版號>_amd64.deb，只能在 x86_64 主機上建
+sudo apt install ./dist/dex2pc_*.deb
+```
+
+### 方式三：`cargo install`
 
 ```bash
 cargo install --path .     # 編譯並安裝到 ~/.cargo/bin/dex2pc

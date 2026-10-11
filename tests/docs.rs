@@ -212,3 +212,56 @@ fn changelog_unreleased_announces_the_rpm_package_in_plain_words() {
     assert!(unreleased.contains("rpm 安裝包"));
     assert!(unreleased.contains("sudo dnf remove dex2pc"));
 }
+
+#[test]
+fn readme_install_section_has_copyable_apt_install_for_the_deb() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("\nsudo apt install ./dex2pc_*.deb\n"));
+}
+
+#[test]
+fn readme_install_section_says_deb_supports_only_debian_13_and_ubuntu_26_04_amd64() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("只支援 Debian 13（trixie）與 Ubuntu 26.04 以上，amd64"));
+}
+
+#[test]
+fn readme_install_section_explains_getting_scrcpy_on_debian_13_before_installing_the_deb() {
+    let install = section(README, "\n## 安裝\n");
+
+    // F9 查到的倉庫版本：Debian 13 沒有 scrcpy，Ubuntu 26.04 是 3.3.4
+    assert!(install.contains("倉庫**沒有 scrcpy**"));
+    assert!(install.contains("倉庫的 scrcpy 是 3.3.4"));
+    let official = install.find("scrcpy-linux-x86_64-v5.0.1.tar.gz").unwrap();
+    let placeholder = install
+        .find("sudo apt install ./scrcpy_5.0.1_all.deb")
+        .unwrap();
+    let dex2pc = install.rfind("sudo apt install ./dex2pc_*.deb").unwrap();
+    assert!(official < placeholder && placeholder < dex2pc);
+}
+
+#[test]
+fn readme_install_section_says_doctor_hints_are_fedora_only() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("`dex2pc doctor` 的安裝提示目前只列 Fedora 的 `dnf` 指令"));
+}
+
+#[test]
+fn readme_install_section_documents_building_the_deb_and_removing_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo apt install cargo git gzip binutils dpkg"));
+    assert!(install.contains("packaging/build-deb.sh"));
+    assert!(install.contains("sudo apt remove dex2pc"));
+}
+
+#[test]
+fn changelog_unreleased_announces_the_deb_package_in_plain_words() {
+    let unreleased = section(CHANGELOG, "\n## [Unreleased]\n");
+
+    assert!(unreleased.contains("deb 安裝包"));
+    assert!(unreleased.contains("sudo apt remove dex2pc"));
+}

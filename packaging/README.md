@@ -28,7 +28,7 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 - **scrcpy 的最低版本寫在三個地方**，要一起改：`src/doctor.rs` 的 `MIN_SCRCPY`、`rpm/dex2pc.spec` 的 `Requires`、`build-deb.sh` 的 `min_scrcpy`。
   `tests/rpm_contents.rs` 與 `tests/deb.rs` 會檢查它們一致。
 - 實測的倉庫 scrcpy 版本（`smoke-test-deb.sh` 會在輸出回報）：**Debian 13 沒有 scrcpy**；**Ubuntu 26.04 是 3.3.4-1（universe）**，夠新。
-  Debian 13 上 `apt install` 會因為強制相依而失敗，使用者要先取得 scrcpy 3.2 以上（README 的安裝段落說明，F10）。
+  Debian 13 上 `apt install` 會因為強制相依而失敗，使用者要先取得 scrcpy 3.2 以上（README「安裝」的「方式二」有步驟）。
 - 其他發行版的倉庫 scrcpy 低於 3.2 時同樣會安裝失敗，處理方式相同。
 - 版號沒有 Debian revision（`0.2.0`，不是 `0.2.0-1`）：套件由上游自己建置，不另外維護 Debian 補丁。
 

@@ -205,3 +205,11 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - README 的 GitHub Releases 連結用相對路徑 `../../releases`（沒有 git remote 可確認實際網址）。
   - 下一步：F10（deb 文件）、F6（實機驗收）。
   - F5 審查修正：「快速開始」與 doctor／參數範例改成安裝後可直接用的 `dex2pc …`（rpm 使用者不需要 Rust），`cargo run` 只留在「建置與執行」（標明開發用）；建置指令的測試改成寫死 `rpm-build cargo rust desktop-file-utils git tar`，不再從 spec 推導。順手確認 Fedora 的 `rust` 套件 Requires `/usr/bin/cc`，所以不用另外列 gcc。
+
+- F10 完成（deb 文件）：
+  - README「安裝」新增「方式二：deb 安裝包」（cargo install 改為方式三）：只支援 Debian 13 / Ubuntu 26.04 以上 amd64；Ubuntu 26.04 直接 `sudo apt install ./dex2pc_*.deb`；Debian 13 先裝 scrcpy 官方靜態版（`/opt/scrcpy` + `/usr/local/bin/scrcpy` 連結），再用 equivs 建「佔位」scrcpy 套件滿足 `Depends`，最後裝 dex2pc；`doctor` 提示只有 Fedora 指令；`.sha256`／PATCH 版說明；`sudo apt remove dex2pc`；自建 deb（`sudo apt install cargo git gzip binutils dpkg` + `build-deb.sh`）。「需求」段落與 platform badge 改為 Fedora / Debian / Ubuntu。
+  - 查證（2026-10-11）：Debian trixie、trixie-backports、forky、sid 都**沒有** scrcpy 套件；scrcpy 官方 doc/linux.md 也把 Debian/Ubuntu 的 apt 版標為過時，建議用官方靜態版 `scrcpy-linux-x86_64-vX.tar.gz`（目前 v5.0.1）。
+  - 實跑：README 的 Debian 13 步驟在 debian:13 容器完整跑過（官方 scrcpy 5.0.1 + 佔位套件 + dex2pc deb），`dex2pc doctor` 列出 `scrcpy：5.0.1`，移除後 `/usr/bin/dex2pc` 消失。自建 deb 指令在 debian:13（cargo 1.85.1）與 ubuntu:26.04（cargo 1.93.1）容器都建置成功。
+  - CHANGELOG [Unreleased]「新增」加一條 deb 安裝包。版本 badge 檢查照常通過。
+  - 測試：`tests/docs.rs` +6。
+  - 下一步：F6（實機驗收，需要使用者操作）。
