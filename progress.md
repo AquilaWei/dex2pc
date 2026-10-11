@@ -213,3 +213,5 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - CHANGELOG [Unreleased]「新增」加一條 deb 安裝包。版本 badge 檢查照常通過。
   - 測試：`tests/docs.rs` +6。
   - 下一步：F6（實機驗收，需要使用者操作）。
+  - F10 審查修正：Debian 13 的 scrcpy 步驟改成「每個版本解壓到 `/opt/scrcpy/scrcpy-linux-x86_64-v<版號>/`，`ln -sf` 把 `/usr/local/bin/scrcpy` 指向要用的版本，`scrcpy --version` 確認後才建佔位套件」，避免升級時 `mv` 把新版塞進舊目錄。補上「更新 scrcpy」說明。測試改成寫死 5.0.1，分別檢查下載 URL、解壓目錄與連結、佔位 Version、佔位 deb 檔名、升級說明。
+  - 容器驗證（debian:13，照 README 指令）：先裝 3.3.4 + 佔位 3.3.4 + dex2pc（doctor 顯示 3.3.4）→ 不移除 dex2pc 直接升級到 5.0.1（`scrcpy --version`、`dpkg-query` 的佔位版本、doctor 都是 5.0.1）→ 同版本再做一次也正常；dex2pc 一直維持已安裝。

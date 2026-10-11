@@ -94,15 +94,16 @@ sudo apt install ./dex2pc_*.deb
 
 ```bash
 # 1. 官方靜態版（版本號換成 https://github.com/Genymobile/scrcpy/releases/latest 的最新版）
+#    每個版本解壓到 /opt/scrcpy 底下自己的目錄，/usr/local/bin/scrcpy 連結指向要用的那一版
 wget https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz
-tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz
-sudo mv scrcpy-linux-x86_64-v5.0.1 /opt/scrcpy
-sudo ln -sf /opt/scrcpy/scrcpy /usr/local/bin/scrcpy
-scrcpy --version
+sudo mkdir -p /opt/scrcpy
+sudo tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz -C /opt/scrcpy
+sudo ln -sf /opt/scrcpy/scrcpy-linux-x86_64-v5.0.1/scrcpy /usr/local/bin/scrcpy
+scrcpy --version     # 第一行要是 scrcpy 5.0.1，確認後才做第 2 步
 
-# 2. 佔位套件：只用來滿足 dex2pc 的 Depends，裡面沒有任何檔案；Version 填上面裝的版本
+# 2. 佔位套件：只用來滿足 dex2pc 的 Depends，裡面沒有任何檔案；Version 填上面確認到的版本
 sudo apt install equivs
-printf 'Package: scrcpy\nVersion: 5.0.1\nMaintainer: local <root@localhost>\nArchitecture: all\nDescription: placeholder for scrcpy installed in /opt/scrcpy\n' > scrcpy-placeholder
+printf 'Package: scrcpy\nVersion: 5.0.1\nMaintainer: local <root@localhost>\nArchitecture: all\nDescription: placeholder for scrcpy installed under /opt/scrcpy\n' > scrcpy-placeholder
 equivs-build scrcpy-placeholder
 sudo apt install ./scrcpy_5.0.1_all.deb
 
@@ -111,7 +112,9 @@ sudo apt install ./dex2pc_*.deb
 ```
 
 - 以上步驟已在 Debian 13 容器實際跑過：`dex2pc doctor` 會列出 `scrcpy：5.0.1`
-- 更新 scrcpy 時，重做第 1 步，並用新版號重建佔位套件
+- **更新 scrcpy**：把第 1、2 步的 `5.0.1` 全部換成新版號重做一次。新版會解壓到自己的目錄，`ln -sf` 把連結改指向新版；
+  `scrcpy --version` 確認是新版後再重建佔位套件，`apt install` 會把佔位套件升級成新版號（不用先移除 dex2pc）。
+  舊版目錄確認不用後可刪：`sudo rm -rf /opt/scrcpy/scrcpy-linux-x86_64-v<舊版號>`
 - 其他 scrcpy 低於 3.2 的發行版處理方式相同
 
 **共通說明**：

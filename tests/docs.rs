@@ -243,20 +243,47 @@ fn readme_install_section_explains_getting_scrcpy_on_debian_13_before_installing
 }
 
 #[test]
-fn readme_debian_scrcpy_steps_use_one_version_for_download_placeholder_and_file_name() {
+fn readme_debian_scrcpy_download_url_is_the_official_5_0_1_static_build() {
     let install = section(README, "\n## 安裝\n");
 
-    // 下載的 tar 版本、佔位套件的 Version、佔位 deb 的檔名要是同一個版本，否則 apt 找不到 scrcpy
-    let download = install.split("scrcpy-linux-x86_64-v").nth(1).unwrap();
-    let version = download.split(".tar.gz").next().unwrap();
-    assert!(
-        install.contains(&format!("Version: {version}\\n")),
-        "佔位套件的 Version 不是 {version}"
-    );
-    assert!(
-        install.contains(&format!("scrcpy_{version}_all.deb")),
-        "佔位 deb 的檔名不是 scrcpy_{version}_all.deb"
-    );
+    assert!(install.contains(
+        "wget https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz\n"
+    ));
+}
+
+#[test]
+fn readme_debian_scrcpy_extracts_into_a_per_version_directory_and_links_to_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    // 解壓到 /opt/scrcpy 底下以版本命名的目錄；升級時不會把新版塞進舊版目錄裡
+    assert!(install.contains("sudo tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz -C /opt/scrcpy\n"));
+    assert!(install.contains(
+        "sudo ln -sf /opt/scrcpy/scrcpy-linux-x86_64-v5.0.1/scrcpy /usr/local/bin/scrcpy\n"
+    ));
+    assert!(!install.contains("mv scrcpy-linux-x86_64"));
+}
+
+#[test]
+fn readme_debian_scrcpy_placeholder_version_is_5_0_1() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("Package: scrcpy\\nVersion: 5.0.1\\n"));
+}
+
+#[test]
+fn readme_debian_scrcpy_placeholder_deb_file_name_is_5_0_1() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo apt install ./scrcpy_5.0.1_all.deb\n"));
+}
+
+#[test]
+fn readme_debian_scrcpy_upgrade_relinks_and_checks_version_before_rebuilding_placeholder() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("**更新 scrcpy**"));
+    assert!(install.contains("`ln -sf` 把連結改指向新版"));
+    assert!(install.contains("`scrcpy --version` 確認是新版後再重建佔位套件"));
 }
 
 #[test]
