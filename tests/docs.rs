@@ -132,20 +132,19 @@ fn readme_install_section_documents_building_the_rpm_and_removing_it() {
     assert!(install.contains("sudo dnf remove dex2pc"));
 }
 
+/// spec 的 `BuildRequires` 必須是這份清單。要改時兩處一起改：這份清單、spec，
+/// 而且 README 的建置指令要涵蓋新加的套件（下面的 README 測試會檢查）
+const RPM_BUILD_REQUIRES: [&str; 3] = ["cargo", "rust", "desktop-file-utils"];
+/// `build-rpm.sh` 用到、但不在 spec 的 `BuildRequires` 裡的工具
+const RPM_BUILD_TOOLS: [&str; 3] = ["rpm-build", "git", "tar"];
+
 #[test]
 fn readme_rpm_build_command_installs_the_tools_the_build_needs() {
-    // 預期的套件寫死：spec 的 BuildRequires（cargo、rust、desktop-file-utils）加上 build-rpm.sh 用到的 rpm-build、git、tar
+    // 固定清單與 spec 的 BuildRequires 共用同一份常數，改常數就會同時影響 spec 測試，兩邊不會各自漂移
     let line = install_line(README, "sudo dnf install rpm-build");
     let installed: Vec<&str> = line.split_whitespace().collect();
 
-    for tool in [
-        "rpm-build",
-        "cargo",
-        "rust",
-        "desktop-file-utils",
-        "git",
-        "tar",
-    ] {
+    for tool in RPM_BUILD_REQUIRES.into_iter().chain(RPM_BUILD_TOOLS) {
         assert!(
             installed.contains(&tool),
             "{tool} 不在 README 的指令：{line}"
@@ -154,9 +153,7 @@ fn readme_rpm_build_command_installs_the_tools_the_build_needs() {
 }
 
 #[test]
-fn spec_build_requires_are_exactly_cargo_rust_and_desktop_file_utils() {
-    // spec 增減 BuildRequires 時這裡失敗。改這份清單時，同一批套件也要加進 README 的建置指令
-    // 與上面 `readme_rpm_build_command_installs_the_tools_the_build_needs` 的固定清單
+fn spec_build_requires_are_exactly_the_list_the_readme_test_checks() {
     let spec = include_str!("../packaging/rpm/dex2pc.spec");
 
     let build_requires: Vec<&str> = spec
@@ -165,7 +162,7 @@ fn spec_build_requires_are_exactly_cargo_rust_and_desktop_file_utils() {
         .filter_map(|rest| rest.split_whitespace().next())
         .collect();
 
-    assert_eq!(build_requires, ["cargo", "rust", "desktop-file-utils"]);
+    assert_eq!(build_requires, RPM_BUILD_REQUIRES);
 }
 
 /// 回傳含 `prefix` 的那一行（README 裡只出現一次的指令）
