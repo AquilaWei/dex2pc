@@ -104,6 +104,22 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
 3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
 4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
 
+## 實機驗收清單（F6，使用者操作，確認後才可標為完成）
+
+安裝包的實機項目寫在 README「實機驗收清單」的「安裝包」段，Fedora（rpm）、Debian 13（deb）、Ubuntu 26.04（deb）各做一次：
+
+1. 安裝：照 README 指令裝好，`dex2pc --version` 印出版號
+2. 選單出現「Samsung DeX」（不跑 `install-desktop`）
+3. 點選單的捷徑開出 DeX 視窗，鍵鼠可操作
+4. 移除後選單捷徑消失、`dex2pc` 指令找不到
+
+只能在 GitHub 上確認的項目（沒有 git remote，從沒跑過）：
+
+5. 推一個分支：`CI` workflow 全綠（workflow-lint、verify、package、三個 smoke）
+6. 推 PATCH 版 commit：只有 CI artifact，沒有 Release
+7. 推 `vX.Y.0` tag：Release 建立，附 rpm、deb 與各自的 `.sha256`，notes 等於 CHANGELOG 該版段落
+8. README 的 `../../releases` 連結在 GitHub 上點得到 Release 頁
+
 ## 進度紀錄
 
 - **F11 完成**（2026-10-10）：`packaging/common/version.sh`（只讀 Cargo.toml 的 `[package]` version）、
@@ -215,3 +231,5 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 下一步：F6（實機驗收，需要使用者操作）。
   - F10 審查修正：Debian 13 的 scrcpy 步驟改成「每個版本解壓到 `/opt/scrcpy/scrcpy-linux-x86_64-v<版號>/`，`ln -sf` 把 `/usr/local/bin/scrcpy` 指向要用的版本，`scrcpy --version` 確認後才建佔位套件」，避免升級時 `mv` 把新版塞進舊目錄。補上「更新 scrcpy」說明。測試改成寫死 5.0.1，分別檢查下載 URL、解壓目錄與連結、佔位 Version、佔位 deb 檔名、升級說明。
   - 容器驗證（debian:13，照 README 指令）：先裝 3.3.4 + 佔位 3.3.4 + dex2pc（doctor 顯示 3.3.4）→ 不移除 dex2pc 直接升級到 5.0.1（`scrcpy --version`、`dpkg-query` 的佔位版本、doctor 都是 5.0.1）→ 同版本再做一次也正常；dex2pc 一直維持已安裝。
+
+- F6（實機驗收清單）：README「實機驗收清單」新增「安裝包」段（rpm／deb 安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失，三個發行版各做一次）；progress.md 新增「實機驗收清單」段，另列 GitHub 上才能確認的 CI／Release 項目。**`passes` 維持 false**：功能步驟規定要使用者實機確認後才能標完成，這裡沒有實機可測。

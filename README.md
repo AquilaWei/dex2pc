@@ -251,6 +251,13 @@ cargo run --example sync_version_badge
 - [x] **小字清晰度與操作延遲**：預設位元率下沒有問題（2026-10-10）；小字模糊時可用 `--video-bit-rate 16M`（或更高）
 - [ ] 應用程式選單的「Samsung DeX」捷徑能開啟視窗（暫不驗收）
 
+**安裝包**：容器裡只確認過安裝、`--version`、`doctor` 與移除，沒有桌面環境也沒接手機。以下每一項在 **Fedora（rpm）**、**Debian 13（deb）**、**Ubuntu 26.04（deb）** 的實體主機上各做一次：
+
+- [ ] **安裝**：照上方「安裝」的指令裝好，`dex2pc --version` 印出版號
+- [ ] **選單捷徑**：不跑 `dex2pc install-desktop`，應用程式選單就出現「Samsung DeX」（可能要重新登入才會出現）
+- [ ] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
+- [ ] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
+
 ## 頻寬：USB 2.0 就夠嗎？
 
 **夠。** 畫面是壓縮後的影片串流，不是原始畫面：
