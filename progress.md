@@ -1,220 +1,235 @@
-# 進度與計畫：SamsungDex2DesktopPC
+# 進度與計畫：dex2pc rpm 安裝包
 
 ## 目標
 
-透過 USB-C 對 USB-C 線，把 Samsung DeX 以「一個程式視窗」的形式顯示在電腦上，並用電腦原本的鍵盤滑鼠直接操作。
+讓 SamsungDex（dex2pc）可以用 rpm 安裝（`sudo dnf install ./dex2pc-*.rpm`）。
 
-## 調查結論（2026-10-09）
+## 現況（2026-10-10）
 
-- **Samsung 官方的「DeX for PC」已停止支援**：One UI 7 起不再支援，Samsung 建議改用 Link to Windows，但那不是桌面模式。
-- **USB-C 線的「資料」是雙向的，但「影像訊號」不能直接送進電腦**：手機接螢幕時用的是 DisplayPort Alt Mode，
-  手機是訊號來源；筆電/桌機的 USB-C 孔也只會當 DisplayPort 來源（輸出），沒有接收端。兩個來源對接不會有畫面。
-  所以做法是：手機把畫面壓成 H.264/H.265 影片串流，經 USB **資料**通道（ADB）傳到電腦解碼成視窗；
-  鍵鼠事件再經同一條線反向傳回手機。這就是 scrcpy 的原理。線必須支援資料傳輸（有些線只能充電）。
-- **可行路線：scrcpy 的虛擬顯示器**：scrcpy 3.0+ 的 `--new-display=WxH/DPI` 會在手機上建立一個虛擬顯示器，並把它開成電腦上的視窗，鍵鼠事件也會傳回手機。
-  One UI 8（Android 16 Desktop Mode）起，DeX 改建在 Android 原生 Desktop Mode 上，可以跑在虛擬顯示器上，**不需要 root**。
-  One UI 7 以前只能做一般鏡像（或要 HDMI dummy plug 之類的 hack）。
-- **scrcpy 是什麼**（使用者問過）：Genymobile 開發的開源免費工具（Apache 2.0），Linux / Windows / macOS 都能用。
-  它經 ADB 在手機上暫時跑一個小程式，把畫面壓成影片串流傳到電腦、在電腦上開視窗顯示，並把電腦的鍵鼠事件送回手機；
-  不需要在手機裝 App、不需要 root。畫面傳輸、解碼、鍵鼠轉送這些最難的部分都由它處理，dex2pc 不重寫。
-- 已有第三方包裝工具 DeXtop Mode（PyPI `dextop-mode`）做類似的事；計畫是自己寫一個 `dex2pc`，要不要改用現成工具列在 questions 裡等使用者決定。
+> 以下三行是第一輪的觀察；現已更新，master 已併入，見「使用者回覆（第二輪）」。
 
-## 頻寬估算（使用者問「頻寬夠嗎」，2026-10-09）
+- 這個 worktree（分支 `hb/18-samsungdex-rpm`）只有 Init commit，**沒有任何檔案**。
+- 真正的程式在主 checkout `/home/Aquila/Documents/WorkSpace/SamsungDex2DesktopPC`：Rust crate `dex2pc` 0.2.0，
+  有 Cargo.toml、src/、tests/、README、CHANGELOG，以及**已 staged 但未 commit** 的狀態（主 checkout 的 `feature_list.json` 是舊專案的計畫，不是這份）。
+- 本機有 `rpmbuild`、cargo；沒有 `rpmlint`、`fpm`。
+- 專案只支援 Fedora Linux；已有 `install-desktop` 子指令可建立使用者層級捷徑。
 
-| 項目 | 需要 / 提供 |
-|------|-------------|
-| 不壓縮 1080p60（24-bit） | 約 3 Gbps（USB 2.0 不夠，這也是為什麼一定要壓縮） |
-| 不壓縮 1440p60 | 約 5.3 Gbps |
-| scrcpy 壓縮後影像（H.264/H.265） | 預設 8 Mbps，高畫質約 16–20 Mbps |
-| 音訊（Opus） | 約 0.128 Mbps |
-| 鍵鼠事件 | 幾 KB/s，可忽略 |
-| USB 2.0 | 480 Mbps（實際約 300 Mbps 可用） |
-| USB 3.2 Gen 1 | 5 Gbps |
+## 計畫
 
-結論：壓縮後的串流只用 USB 2.0 的一小部分，**理論上頻寬很充足**。實際限制在手機的硬體編碼器（解析度上限、發熱）、
-編解碼延遲（通常幾十毫秒），以及壓縮造成的小字模糊（調高位元率可改善）。
-因此新增 F11：doctor 讀 sysfs 顯示實際協商的 USB 速度，只在低於 USB 2.0（例如線材不良降到 12 Mbps）時警告。
+F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執行」）F1 spec 與本機 build 腳本 → F2 rpm 內容/相依/desktop 檔 → F3 Fedora 容器安裝煙霧測試
+→ F8 deb 建置 → F9 Debian/Ubuntu 容器煙霧測試 → F4 CI 與發佈（rpm+deb）→ F5 rpm 文件 → F10 deb 文件 → F6 實機驗收。
 
-## 使用者已確認（2026-10-09）
+## 使用者回覆（2026-10-10）
 
-- 電腦平台：**只要 Linux（Fedora）**。安裝提示只寫 dnf；不做 Windows / macOS。
-- 手機：**One UI 8 以上**。因此移除原本的「不支援時退回鏡像模式」：F4 不符合就報錯，F5 只組 DeX 指令，F7 不支援直接失敗。
-- 實作語言：**Rust**。整份計畫已從 Python + uv 改為 cargo；功能範圍不變。
-- 尚未回答：要做包裝工具還是只要教學（使用者回問「scrcpy 是什麼」，已在回覆中解釋並重新提問）。計畫目前照建議（包裝工具），若使用者改選，要重排計畫。
+- 建置方式：**rpmbuild + 自寫 spec**（已確認）。
+- 目標：**也要相容 RHEL/openSUSE 等其他 rpm 系**。影響：spec 只用通用巨集、套件相依不能寫死單一發行版的名稱、
+  F3 煙霧測試改成多發行版 matrix、新增 F7（doctor 安裝提示依 os-release 調整）。
+- 使用者問「改用 Flatpak 是否比較好、可避開相依問題」。結論：**不取代 rpm**。dex2pc 是呼叫主機上 adb 與 scrcpy 的 CLI，
+  需要 USB 裝置存取與 adb server；Flatpak 沙箱得開 `--device=all`、自帶 adb 與 scrcpy、主機仍要 udev 規則，
+  相依問題只是搬進套件包裡，且維護成本更高。使用者目標是 rpm，Flatpak 列為之後可選的獨立功能（見 questions）。
+  跨發行版的相依問題改用 Recommends 與 doctor 的分發版提示處理。
 
-## 架構
+## 使用者回覆（2026-10-10，第二輪）
 
-Rust binary crate `dex2pc`（cargo），本身不處理影像，只負責：
+- 發行版：**只做 Fedora**（推翻上一輪「相容 RHEL/openSUSE」）；但要**考慮 deb**。處理：打包檔分目錄（packaging/rpm/、packaging/common/），
+  新增 F8 只寫 deb 評估筆記；是否真的做 deb 列在 questions。多發行版 matrix 與 F7（doctor 依發行版提示）已移除，**F7 的 id 不再使用**。
+- scrcpy：**Requires 強制相依**。影響：Fedora 官方庫沒有 scrcpy，使用者要先 `dnf copr enable zeno/scrcpy`，否則 dnf 安裝失敗；
+  F3 煙霧測試要先啟用 COPR（需要網路），README（F5）要寫明。
+- doctor 提示維持只提示 Fedora 指令。
+- 發佈：只放 GitHub Release。
+- Flatpak：先不做，rpm 完成後再評估。
+- repo 內容：主 checkout 現在有 `master` 分支，含完整程式（Cargo.toml 0.2.0 等）。已把 master 併進本分支（見下方），
+  master 上舊專案的 feature_list.json / progress.md 衝突時以本計畫為準，舊內容留在 git 歷史。
 
-1. `doctor`：檢查 adb / scrcpy（>= 3.2，原本 3.0，見下方 2026-10-10 審查紀錄）、裝置、One UI 版本
-2. 組 scrcpy 指令（純函式，好測）
-3. `start`：選裝置 → 檢查能力 → 以 DeX 虛擬顯示模式啟動 scrcpy
-4. 選配：手機端 settings 套用與還原、斷線自動重連、Linux 桌面捷徑
+## 使用者回覆（第三輪）
 
-所有和 adb / scrcpy 的互動都經過一個 `CommandRunner` trait，測試用假的實作回傳寫死的輸出，不需要實機。
-sysfs 根目錄、設定目錄、.desktop 目錄都以參數注入，測試不讀寫真實路徑、不改全域環境變數（Rust 測試預設平行執行）。
+- deb：**現在就做**（Debian/Ubuntu）。F8 由「評估筆記」改為真正的 deb 建置，新增 F9（deb 容器煙霧測試）、F10（deb 文件）；
+  F4 的 CI 與發佈同時涵蓋 rpm 與 deb，F6 實機驗收加上 Debian/Ubuntu。
+- 建置方式：`dpkg-deb` 組出檔案樹（不新增 crate；與 rpm 一樣用平台原生工具），與 rpm 共用 `packaging/common/`。
+- 仍只限 x86_64/amd64；`doctor` 提示維持只列 Fedora 指令，deb 使用者靠 README。
+- 風險：Debian/Ubuntu 倉庫的 scrcpy 多半低於 3.2（dex2pc 目前要求 3.2 以上），相依與支援版本見 questions。
 
-建議的 crate（實作時可依需要調整，新增依賴要有理由）：`clap`（derive）、`serde` + `toml`（設定檔）、
-`tempfile`（dev-dependency，測試用暫存目錄）、F8/F9 需要攔 Ctrl+C 時再加 `ctrlc`。
+## 使用者回覆（第四輪）
 
-## 檢查指令
+- deb 支援 **Debian 13（trixie）與 Ubuntu 26.04 以上**（amd64）；倉庫 scrcpy 不夠新時，README 說明如何取得。
+- deb 用 **`Depends: scrcpy (>= 3.2)` 強制相依**，與 rpm 一致。下限必須與程式內檢查的最低版本相同（目前 master 的程式要求 3.2，實作時再核對）。
+- 影響：倉庫 scrcpy 太舊時 `apt install` 會失敗，所以 F9 在容器內用 equivs 建假的 scrcpy 3.2 套件滿足相依（要在輸出註明），
+  並回報各映像檔實際的 scrcpy 版本，供 F10 寫 README。目前沒有未決問題。
 
-`cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`
+## 使用者回覆（第五輪）
 
-在 F1 完成前這個指令一定失敗（還沒有 Cargo.toml），所以 F1 必須第一個做。
+- GitHub 端要建置（已確認是 CI，不是 CHANGELOG）：每次 push/PR 都建置 rpm 與 deb；
+  **只有「中版本」（MINOR，即 X.Y.0）以上才打 tag 並自動打包發佈**，PATCH 版不 tag、不發佈。
+- **這覆蓋 coding-standards 的「每次進版打 tag `vX.Y.Z`」**：使用者本專案的明確指示優先，PATCH 版只更新 CHANGELOG、README badge，不打 tag。
+  發佈 workflow 只接 `v*.*.0`。
+- 目前以 **Public repo** 為主：用免費 GitHub-hosted runner 與內建 GITHUB_TOKEN，不設 secret；若日後改私有 repo 再評估（runner 額度、artifact 可見性）。
 
-## 給下一個 session 的注意事項
+## 平行執行（第六輪，使用者要求：能拆成 subagent 平行就盡量平行）
 
-- **所有功能都已完成**（F8 於 2026-10-10 實機確認後標 true）。
-- **2026-10-10 實機驗證**（使用者授權手機並安裝 scrcpy 5.0.1 後）：
-  - 手機：Galaxy S23（`SM-S9180`）、Android 16（SDK 36）、`ro.build.version.oneui` = `80500`（One UI 8.5）。
-  - `dex2pc doctor` 全部通過，輸出與預期一致：getprop 格式、One UI 解析、sysfs USB 速度（這次接在 USB 3 孔，5000 Mbps）都正確。
-  - `dex2pc start` 以 `--new-display=1920x1080/160` 建立虛擬顯示器（`dumpsys display` 的 displayId 7），上面直接跑
-    `com.sec.android.app.launcher/com.honeyspace.dexservice.SecondaryLauncher`（DeX 桌面），**沒有改任何手機設定**。
-    用 `adb exec-out screencap -d <SurfaceFlinger 的 display id> -p` 截圖確認有 DeX 的桌面圖示與工作列
-    （`screencap -d` 要用 `dumpsys SurfaceFlinger --display-id` 列出的 64 位元 id，不是 displayId 7）。
-  - scrcpy 被 `timeout` 結束後，虛擬顯示器自動消失。
-  - 因此 F8 走步驟 1 的「完全不需要」分支：只在 README 記錄結論，不寫套用/還原設定的程式，`passes` 標 true。
-  - 仍未驗：滑鼠鍵盤（含中文輸入）、剪貼簿、音訊、拔線重連、Ctrl+C、桌面捷徑。這些要使用者在電腦前操作，列在 README 實機驗收清單。
-- 2026-10-09 session：本機接著一台 Samsung 手機（lsusb `04e8:6864`，USB 偵錯已開），系統 PATH 沒有 adb，
-  但 Android SDK 有 `~/Android/Sdk/platform-tools/adb`；**沒有 scrcpy**。`adb devices -l` 顯示 `unauthorized usb:3-1`，
-  要使用者在手機上按「允許 USB 偵錯」才能讀 getprop 或跑 scrcpy，非互動 session 做不到，所以 F8 仍維持 false。
-  只跑了唯讀指令，結束前已 `adb kill-server`。使用者授權並安裝 scrcpy（`dnf copr enable zeno/scrcpy && dnf install scrcpy`）後，
-  下一個 session 可用 `PATH=~/Android/Sdk/platform-tools:$PATH dex2pc doctor` 先驗 F2–F4、F11，再由使用者看 `dex2pc start` 是否出現 DeX。
-- F1 已完成：`Cargo.toml`（clap 4 derive、clippy pedantic 設為 warn）、`src/main.rs`、`tests/cli.rs`、README、CHANGELOG。
-  `doctor` 子指令目前是佔位（印「尚未實作」並以 1 結束），讓 `--help` 有子指令區塊；F2 直接把它換成真的實作。
-  `clippy.toml` 把 `DeX` 加進 doc-valid-idents，因為 doc comment 會變成 `--help` 文字，不能加反引號。
-  CHANGELOG 目前只有 `[Unreleased]`，還沒打 tag（功能未實機驗收，照規範等出測試版時再進版）。
-- F2 已完成：`src/runner.rs`（`CommandRunner` trait + `SystemRunner`；程式不存在回 `ErrorKind::NotFound`）、
-  `src/doctor.rs`（`parse_scrcpy_version`、`parse_adb_version`、`run`）。doctor 兩項都檢查完才結束，一次列出所有問題。
-  Fedora 的 scrcpy 安裝來源已查證：官方 `doc/linux.md` 寫 `dnf copr enable zeno/scrcpy && dnf install scrcpy`。
-  F4/F11 要往 doctor 加裝置資訊時，在 `doctor::run` 裡接著加檢查即可；假 runner 在 `doctor.rs` 的 tests 模組。
-  審查後補強：假 runner 只回應確切的 `adb version`、`scrcpy --version`，其他參數直接 panic，並記錄呼叫順序；
-  回應可模擬成功、非 0 結束、找不到程式、權限錯誤。測試涵蓋 scrcpy 恰為 3.0 時通過，
-  以及任一工具失敗時仍檢查另一個。已用改錯參數、改門檻、提早結束這幾種錯誤實作確認測試會失敗。
-- F3 已完成：`src/device.rs`（`parse_devices` 解析 `adb devices -l`、`select` 依 `--serial` 選裝置，皆為純函式）。
-  `doctor` 多了 `--serial/-s`，在 adb 可用時接著跑 `adb devices -l` 並印出「裝置：序號（型號）」；adb 不能用時不列裝置。
-  選不到裝置的原因是 `SelectError`，`Display` 就是給使用者的訊息，F7 `start` 直接重用 `device::select`。
-  除了 unauthorized，也處理 `no permissions`（Fedora 上 udev 權限不足常見）與 offline 等其他狀態。
-  沒給 serial 時只算 `device` 狀態的裝置：一台 ready + 一台 unauthorized 會自動選 ready 那台。
-  F4 要讀 getprop 時用 `adb -s <serial> shell getprop ...`，接在 `doctor::check_device` 成功之後。
-- F4 已完成：`src/capability.rs`（`parse_one_ui`、`DeviceInfo::from_getprop`、`check`，皆為純函式）。
-  `doctor::check_device` 改成回傳選到的序號，接著跑一次不帶參數的 `adb -s <serial> shell getprop`（一次讀全部屬性），
-  印「型號：…（Android SDK …，One UI …）」與「判定：…」。製造商看 `ro.product.manufacturer`（不分大小寫）。
-  Samsung 但讀不到/解析不了 oneui 也判定不支援。F7 `start` 直接重用 `capability::check`。
-  getprop 輸出格式 `[key]: [value]` 與屬性名稱憑記憶寫，未在實機確認（需要實機驗收）。
-- F11 已完成：`src/usb.rs`（`find_speed`、`MIN_MBPS`）。`doctor::run` 多一個 `sysfs_root` 參數（main 傳 `/sys`），
-  選到裝置後、讀 getprop 之前印「連線：USB N Mbps」；低於 480 多印一行警告。USB 速度只是診斷，不影響 doctor 結果。
-  速度以 f64 解析，因為低速裝置的 sysfs speed 是 `1.5`。找不到序號或沒有 `bus/usb/devices` 目錄印「無法判斷 USB 速度」；
-  列目錄權限錯誤或 speed 不是數字時印「無法判斷 USB 速度（原因）」，同樣不視為錯誤。
-  doctor 測試的預設假 sysfs 是空暫存目錄，所以既有的完整輸出測試多了「連線：無法判斷 USB 速度」一行。
-  sysfs 的 serial 等於 adb 序號：2026-10-09 實機確認（`/sys/bus/usb/devices/3-1/serial` 與 `adb devices -l` 都是同一個序號，speed 為 480）。
-- F5 已完成：`src/scrcpy.rs`（`Resolution`、`Dpi` 實作 `FromStr`，內部用 `NonZeroU32`；`Options` + `Default`；`build_args`）。
-  不合法的解析度/DPI 在解析時就回傳 `InvalidDisplay`，所以 `build_args` 不會失敗；F6 讀設定檔、clap 解析 `--resolution` 都直接用 `FromStr`。
-  `build_args` 回傳不含 `scrcpy` 程式名稱的參數，順序固定：serial → new-display → window-title → bit-rate → no-audio → keyboard → mouse。
-  鍵鼠模式與位元率是 `Option`，`None` 時不加參數，沿用 scrcpy 預設；位元率字串原樣傳給 scrcpy，由它檢查格式。
-  `main.rs` 對 `mod scrcpy` 加了 `#[cfg_attr(not(test), expect(dead_code))]` 與 TODO，F7 接上後要移除（否則 expect 不成立會報 warning）。
-  F5 尚無使用者看得到的效果，CHANGELOG 沒有新增項目。
-- F6 已完成：`src/config.rs`（`path`、`load`、`Overrides`、`show`）與 `dex2pc config [--path] [覆寫參數]`。
-  設定檔先解析成 `toml::Table` 再逐欄位轉成 `scrcpy::Options`（沒用 serde derive），這樣每個錯誤都能明確寫出欄位名稱；
-  欄位：resolution（字串）、dpi（整數）、video_bit_rate（字串）、audio（bool）、keyboard/mouse（字串）、window_title（字串）。
-  `load` 檔案不存在回 `Ok(None)`，呼叫端用 `unwrap_or_default()`。空字串或相對路徑的 `XDG_CONFIG_HOME` 依 XDG 規範視同未設定。
-  `config::Overrides` 是 clap `Args`，F7 的 `start` 直接 `#[command(flatten)]` 它，再 `overrides.apply(config::load(..)?.unwrap_or_default())`。
-  `--no-audio` 只能關音訊，不能把設定檔的 `audio = false` 打開（沒有 `--audio`）。
-  `InputMode` 多了 `FromStr`/`Display`，設定檔與 CLI 共用同一個錯誤訊息。
-  `expect(dead_code)` 從整個 `mod scrcpy` 縮到 `build_args` 一個函式，F7 接上後移除。
-  clippy.toml 的 doc-valid-idents 加了 `XDG_CONFIG_HOME`（`--help` 文字不能有反引號）。
-  CLI 整合測試只在子行程設定 `XDG_CONFIG_HOME`，不動測試行程的環境變數。
-- F7 已完成：`src/start.rs`（`run`、`dry_run`）與 `dex2pc start [--serial] [--dry-run] [覆寫參數]`。
-  `doctor::check` 是新的共用入口：檢查內容和輸出與 `doctor::run` 相同，全部就緒時回傳選到的序號；`run` 改成呼叫它。
-  `start` 一律帶 `--serial=<選到的序號>` 給 scrcpy，避免連多台時 scrcpy 選錯。
-  `--dry-run` 不經過 runner，結構上就不可能執行外部指令，也因此不選裝置（沒給 `--serial` 時指令裡沒有 serial）；
-  印出的指令以單引號處理含空白的參數，可直接貼到 shell。
-  scrcpy 經現有的 `CommandRunner::run`（`.output()`，**輸出被收集**）執行：好處是失敗時能把它的 stderr 印出來、F9 也能看
-  stderr 判斷是不是斷線；代價是 scrcpy 執行中的 INFO 訊息看不到，正常關閉時不印。若實機覺得需要即時 log，再考慮加一個繼承 stdio 的方法。
-  exit code：scrcpy 0 → 0；非 0 → 相同 code 並印「scrcpy 以 exit code N 結束：」與 stderr（stderr 空時改印 stdout）；
-  被訊號中止或無法執行 → 1；環境檢查不通過 → 1 且不啟動。Ctrl+C 時 SIGINT 同時送到 dex2pc 與 scrcpy，沒有特別處理（F8 要還原設定時才需要攔）。
-  `scrcpy::build_args` 上的 `expect(dead_code)` 已移除。
-- F8 調查（2026-10-09，**未在實機確認，`passes` 維持 false**）：查了 Android Authority、PhoneArena、
-  uzair.is-a.dev（One UI 8 DeX 教學）、dev.to（Mac 上跑 DeX）等社群教學，**沒有任何一篇用到 `adb shell settings put`**；
-  都只開 USB 偵錯後執行 `scrcpy --new-display=…`。網路上找不到 `force_desktop_mode_on_external_displays`、
-  `enable_freeform_support` 對 One UI 8 DeX 有作用的來源。因此照 F8 步驟 1 的分支，暫定「不需要」，只在 README 記錄結論，
-  **沒有寫套用/還原設定的程式**（不為推測中的需求寫程式）。README 請使用者在 DeX 沒出現時回報 `settings list global` 的相關項目。
-  uzair 的教學另外用 `adb shell wm set-minimum-width 411` 修手機本身螢幕模糊；它不影響 DeX 視窗、沒寫怎麼還原，
-  所以不放進 README、也不自動執行。
-  README 依審查意見寫成**待實機確認的假設**，不寫成確定行為：scrcpy 官方 `doc/virtual-display.md` 只保證建立虛擬顯示器，
-  且說明沒有 launcher 的裝置畫面會是空白，沒有保證會啟動 DeX。
-  **F8 要標 true 需要使用者在實機上確認**：`dex2pc start` 是否直接出現 DeX。若出現 → 標 true，結束 F8；
-  若沒出現 → 依使用者回報的設定實作步驟 2–5（套用前讀原值、null 還原用 `settings delete`、`--keep-settings`、攔 Ctrl+C）。
-  使用者還沒回報前，下一個 session 不要重做 F8 的調查，直接做 F9（F9 不依賴 F8）。
-- F9 已完成：`start::run` 多一個 `watch: Option<&Watch>`（`max_failures` 預設 5、`retry_delay` 預設 2 秒，測試用 0）。
-  斷線判斷依 scrcpy man page 的 Exit status（已查證）：0 正常結束、1 初次連線失敗、**2 連線中途斷開**；只有 2 會重連。
-  重連流程：`adb -s <serial> wait-for-device`（阻塞到手機回來）→ 等 `retry_delay` → 用同一組參數重新啟動 scrcpy，不重跑整個 doctor。
-  「連續失敗」= 斷線後重新啟動失敗（scrcpy 非 0/2、無法執行，或 wait-for-device 失敗）；scrcpy 再次回 2 代表有連上過，計數歸零。
-  審查後修正：每次失敗（含 wait-for-device 失敗，它會立刻返回）後也先等 `retry_delay` 再試，避免暫時性 adb 故障瞬間耗盡 5 次；
-  第 5 次失敗直接放棄不再等。等待函式以參數注入 `keep_reconnecting`，回歸測試記錄等待時間而不真的等。
-  第一次啟動就失敗不重試（多半是設定/環境問題）。被訊號中止（scrcpy 或 adb 的 code 為 None）視為 Ctrl+C，直接結束、回 1。
-  Ctrl+C 沒有攔：SIGINT 同時送到 dex2pc、scrcpy、adb，dex2pc 依預設行為結束；目前沒有要還原的狀態，所以不需要 `ctrlc`（F8 若要還原設定再加）。
-  缺點：同一手機若「連上後立刻斷線」不斷重複，計數一直歸零，會一直重試（每次間隔 `retry_delay`），使用者需 Ctrl+C。
-  `--watch` 搭配 `--dry-run` 時 `--watch` 無作用。實機待驗：拔線後 scrcpy 真的回 2、接回後 `wait-for-device` 能等到、2 秒是否夠手機就緒。
-- F10 已完成：`src/desktop.rs`（`applications_dir`、`entry`、`install`、`uninstall`）與 `dex2pc install-desktop [--uninstall]`。
-  `Exec` 寫 `env::current_exe()` 的**絕對路徑** + ` start`，因為桌面環境的 PATH 常不含 `~/.cargo/bin`；
-  代價是用 `cargo run` 建立時會指向 `target/`，README 已說明要在 `cargo install` 之後執行。
-  路徑一律加雙引號，依 Desktop Entry 規範跳脫 `"` `` ` `` `$` `\`（string 層再跳脫一次反斜線）與 `%`→`%%`。
-  審查後補上：換行、tab、CR 用 string 層的 `\n` `\t` `\r` 表示（否則換行會把 `.desktop` 切壞）；
-  其他控制字元規範沒有表示法，`entry` 回傳 `ControlCharInPath` 拒絕安裝。已用 `desktop-file-validate` 與 GLib
-  （`GKeyFile` + `g_shell_parse_argv`）確認含換行、tab 的路徑能還原成原本的參數。
-  不加 `--watch`：捷徑 `Terminal=false`，`wait-for-device` 等不到手機時會在背景一直等、使用者看不到。
-  產生的檔案在本機用 `desktop-file-validate` 驗證通過；`Icon=video-display` 是 freedesktop 標準圖示名稱。
-  空字串/相對路徑的 `XDG_DATA_HOME` 和 `XDG_CONFIG_HOME` 一樣視同未設定；clippy.toml 的 doc-valid-idents 加了 `XDG_DATA_HOME`。
-  README 新增「安裝」「實機驗收清單」「頻寬」「運作方式」（Mermaid 連線／操作流程圖，已用 mermaid-cli 確認能渲染）幾節。
-  版本 badge 由 **`cargo run --example sync_version_badge`** 從 `CARGO_PKG_VERSION` 產生，不手改；
-  `tests/docs.rs` 透過 `#[path]` 共用同一份 `sync_badge`，README 不是最新產物時失敗並提示指令（已用改舊 badge 確認會失敗）；
-  CHANGELOG 仍檢查有 `## [<版號>]` 段落。
-  版號 0.1.0 → **0.1.1**（功能未實機驗收，照規範出 PATCH 測試版；0.1.0 從沒打過 tag），單獨一個 commit，打了本機 tag `v0.1.1`（未推送，沒有 remote）。
-- README 版本 badge：沒有 git remote，shields 的動態 badge 讀不到 Cargo.toml，所以改由 example 產生。
-  **進版流程**：改 `Cargo.toml` → `cargo run --example sync_version_badge` → 更新 CHANGELOG → 測試 → commit → tag。
-  推上 GitHub 後若改用讀 Cargo.toml 的動態 badge，要一起刪掉 example 與 `tests/docs.rs` 的 badge 測試。
-- 任務提示（harness）固定跑 `uv run ruff check . && uv run ruff format --check . && uv run pytest -q`，
-  專案是 Rust，所以加了 `pyproject.toml`（只有 ruff、pytest 兩個 dev 依賴）與 `tests/test_cargo_verify.py`，
-  pytest 會執行 `feature_list.json` 的 cargo verify 三個指令。兩個指令都要過；`.venv/` 已排除在 git 外。
-- 原本 repo 只有計畫文件。本機有 Rust 1.98（cargo、clippy、rustfmt 皆可用），**沒有 adb、scrcpy**，
-  所以測試全部要用假的 CommandRunner，不能依賴這兩個工具存在。
-- 依使用者規範（coding-standards skill）：commit 英文單行 `<type>: <desc>`；版號只寫在 `Cargo.toml`；
-  功能與測試同一個 commit；CLAUDE.md、`.claude/`、`target/` 不進 git；Cargo.lock 要提交（binary crate）。
-- `features` 陣列順序是 F1–F4、F11、F5–F10，照陣列順序做。
-- **實機才驗得出的項目**（不要假裝測過，列給使用者驗收）：DeX 是否真的出現在虛擬顯示器上、
-  滑鼠點擊與捲動、鍵盤與中文輸入、剪貼簿、音訊、拔線重連。
-- 不確定的事：
-  - ~~DeX 出現在虛擬顯示器上是否還需要額外的 adb settings~~：2026-10-10 實機確認不需要（One UI 8.5）。
-  - 預設 DPI：教學有用 160 也有用 284，F5 先用 1920x1080/160，等實機回饋再調。
-  - ~~scrcpy 下限~~：預設參數加了 `--display-ime-policy`（scrcpy 3.2 起，已對照 v3.1／v3.2 的 `app/src/cli.c`），下限改為 3.2；實機只驗過 5.0.1。
-  - Fedora 上 scrcpy 的建議安裝來源（COPR 或其他），F2 實作時查證，不要憑記憶寫。
-- 使用者回答剩下的 question 後可能要調整：是否只要教學、不做工具。
+**結論：可以，分成兩條獨立的軌道，前面一個小的共用基礎、後面一個匯合點。**
 
-- **2026-10-10 實機驗收（使用者）**：音訊正常；滑鼠右鍵、鍵盤、剪貼簿原本失效。
-  依 `scrcpy --help`：sdk 滑鼠預設把右鍵綁成返回（`bhsn`）。改用
-  `--keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local` 後使用者確認右鍵、打字、剪貼簿都正常，
-  所以 `Options::default` 鍵盤改 uhid，`build_args` 一律加 mouse-bind 與 IME policy。
-  先前回報的「拔線重連失敗」是在沒加 `--watch` 的 scrcpy 視窗上拔線，結束是預期行為；
-  之後用 `dex2pc start --watch` 實測，log 顯示 scrcpy 以 exit code 2 結束 → 等待 → 重新啟動，使用者確認視窗自動回來。
-  之後使用者確認中文輸入、快捷鍵、終端機 Ctrl+C 結束都正常。
-  **未驗收**：桌面捷徑（使用者決定暫不處理）。小字清晰度與延遲使用者確認沒有問題。
-- **2026-10-10 審查（codex）**：`--display-ime-policy` 在 scrcpy 3.0、3.1 不存在，doctor 卻放行 3.0 → 檢查通過後啟動失敗。
-  `MIN_SCRCPY` 改為 3.2.0，補上 doctor 3.1.1 被擋、3.2 通過，以及 `start` 遇到 3.1.1 不啟動 scrcpy 的回歸測試（已確認在舊下限下會失敗）。
+| 階段 | 功能 | 依賴 | 備註 |
+|------|------|------|------|
+| 0 | F11 打包共用基礎 | 無 | 先做完（小）：共用 .desktop、version.sh、.gitignore。這是 rpm 與 deb 唯一共用的檔案，先做才不會互相衝突 |
+| 1 | rpm 軌道 F1 → F2 → F3 → F5 | F11 | 檔案範圍：`packaging/rpm/`、`packaging/build-rpm.sh`、`packaging/smoke-test.sh`、`tests/rpm.rs` |
+| 1 | deb 軌道 F8 → F9 → F10 | F11 | 檔案範圍：`packaging/deb/`、`packaging/build-deb.sh`、`packaging/smoke-test-deb.sh`、`tests/deb.rs` |
+| 2 | F4 CI 與發佈 | F3、F9 | 需要兩條軌道的腳本都存在；`.github/workflows/` 是它獨佔的目錄 |
+| 3 | F6 實機驗收清單 | F4、F5、F10 | 使用者操作 |
 
-## 狀態
+- 兩條軌道的程式、腳本、測試**檔案互不重疊**，可各由一個 subagent 在**各自的 git worktree**（`isolation: "worktree"`）同時做；
+  同一軌道內的功能依序做（後者用前者的產物）。
+- **會衝突的共用檔案只有 README.md 與 CHANGELOG.md**（F5 與 F10 都要改）。規則：F5 只動 README 的 rpm 段落，F10 只動 deb 段落，
+  CHANGELOG 各自在 [Unreleased] 加一行；合併時由主 session 解衝突，不叫 subagent 自己合併。
+- 合併順序：F11 → 兩條軌道各自 commit 後由主 session 依序併回 → 跑完整 verify → 再做 F4。每個 subagent 只在自己的 worktree 跑 verify，
+  功能是否完成以併回後的完整 verify 為準。
+- 同一軌道內能再拆的：F3、F9 的容器腳本與測試可與 F5、F10 的文件平行（文件只依賴 F2、F8 已決定的內容）。
+  但文件段落要等 F3、F9 查到真實資料（COPR、倉庫 scrcpy 版本）才能定稿，所以建議先平行起草、最後再回填。
+- 不適合平行的：F4（要等兩條軌道的腳本）、F6（需人工）、F11（是其他功能的前置）。
+- 沒有在 feature_list.json 增加額外欄位（避免破壞既有解析），依賴關係寫在這張表。
+- 每個 subagent 動手前都要載入 `coding-standards`，並遵守「一個 commit 只做一件事」。
 
-| 功能 | 狀態 |
-|------|------|
-| F1 專案骨架 | 完成（2026-10-09） |
-| F2 doctor | 完成（2026-10-09） |
-| F3 裝置偵測 | 完成（2026-10-09） |
-| F4 能力判斷 | 完成（2026-10-09） |
-| F11 USB 速度檢查（排在 F4 之後做） | 完成（2026-10-09） |
-| F5 scrcpy 指令組裝 | 完成（2026-10-09） |
-| F6 設定檔 | 完成（2026-10-09；審查後補 `--audio` 雙向覆寫，與 `--no-audio` 同時給時最後一個為準） |
-| F7 start | 完成（2026-10-09；2026-10-10 實機驗收通過） |
-| F8 手機端設定 | 完成（2026-10-10；實機確認不需要設定，只在 README 記錄結論） |
-| F9 自動重連 | 完成（2026-10-09；2026-10-10 實機驗收通過） |
-| F10 桌面整合與交付 | 完成（2026-10-09；v0.2.0 實機驗收通過，**桌面捷徑尚未驗收**） |
+## 決策與理由
+
+- `rpmbuild` + 自寫 spec（使用者已確認）。
+- verify 沿用專案既有的 `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test`；
+  rpm 相關檢查寫成 cargo 整合測試（tests/rpm.rs），缺少 rpmbuild/rpmlint/容器時自動略過，CI 一定要跑。
+- 版號只寫在 Cargo.toml，spec 由它讀取並用測試驗證一致；進版需同步 CHANGELOG、badge、tag `vX.Y.Z`。
+- 套件相依：scrcpy 不在 Fedora 官方庫（需 COPR zeno/scrcpy），RHEL 系也沒有；使用者決定用 **Requires**。
+- rpm 與 tarball 輸出到 `dist/`，不進 git。
+
+## 給下一個 session
+
+1. 沒有未決問題（questions 已清空）。先做 F11，再依「平行執行」表開兩個 worktree subagent 同時做 rpm 與 deb 軌道；F9 查到的倉庫 scrcpy 版本要回寫到 F10 的 README，尤其是「repo 內容如何帶進這個分支」，否則 worktree 無法跑 verify。
+2. 動手前載入 `coding-standards`；一個 commit 只做一件事；commit 格式 `<type>: <description>`。
+3. 本機沒有 rpmlint，F2 需要時先請使用者安裝（`sudo dnf install rpmlint desktop-file-utils`）或在 CI 跑。
+4. 實際發佈與實機驗收（F4 發佈、F6）需要使用者操作，不可假裝測過。
+
+## 實機驗收清單（F6，使用者操作，確認後才可標為完成）
+
+安裝包的實機項目寫在 README「實機驗收清單」的「安裝包」段，Fedora（rpm）、Debian 13（deb）、Ubuntu 26.04（deb）各做一次：
+
+1. 安裝：照 README 指令裝好，`dex2pc --version` 印出版號
+2. 選單出現「Samsung DeX」（不跑 `install-desktop`）
+3. 點選單的捷徑開出 DeX 視窗，鍵鼠可操作
+4. 移除後選單捷徑消失、`dex2pc` 指令找不到
+
+只能在 GitHub 上確認的項目（沒有 git remote，從沒跑過）：
+
+5. 推一個分支：`CI` workflow 全綠（workflow-lint、verify、package、三個 smoke）
+6. 推 PATCH 版 commit：只有 CI artifact，沒有 Release
+7. 推 `vX.Y.0` tag：Release 建立，附 rpm、deb 與各自的 `.sha256`，notes 等於 CHANGELOG 該版段落
+8. README 的 `../../releases` 連結在 GitHub 上點得到 Release 頁
+
+## 進度紀錄
+
+- **F11 完成**（2026-10-10）：`packaging/common/version.sh`（只讀 Cargo.toml 的 `[package]` version）、
+  `packaging/common/dex2pc.desktop`（Exec=`dex2pc start`，欄位與 `install-desktop` 產生的一致，只有 Exec 不含絕對路徑）、
+  `.gitignore` 加 `dist/`，測試在 `tests/packaging_common.rs`。完整 verify 通過（fmt、clippy、全部測試）。
+  下一步：rpm 軌道（F1）與 deb 軌道（F8）可平行開始。
+  `desktop-file-validate` 缺少時測試略過，但設了環境變數 `CI` 就會失敗，CI 要安裝 desktop-file-utils。
+
+- **F1 完成**（2026-10-10）：`packaging/rpm/dex2pc.spec`、`packaging/build-rpm.sh`、`tests/rpm.rs`。
+  - spec 的版號來自 `%{dex2pc_version}`：build-rpm.sh 用 `--define` 傳入 `packaging/common/version.sh` 的結果；
+    直接對 spec 跑 `rpmspec -P`（要在專案根目錄）則自行呼叫同一支腳本，沒有寫死版號。
+  - build-rpm.sh 用 `git ls-files` 打包原始碼（含尚未 commit 的修改）、暫存 `_topdir`，成品複製到 `dist/`；
+    cargo 若不是 rpm 套件（rustup）會自動加 `--nodeps` 並印出提示。
+  - 目前 rpm 只裝 `/usr/bin/dex2pc`；`.desktop`、授權檔、README、`Requires` 都留給 F2。repo 目前沒有 LICENSE 檔，F2 需要處理。
+  - 測試：`tests/rpm.rs` 的 build 測試會真的跑 rpmbuild（約 18 秒，要能下載 crate）；缺 rpmbuild 時本機略過，設了 `CI` 就失敗。
+  - 下一步：F2（rpm 軌道）或 F8（deb 軌道，可平行）。
+- **F1 審查修正**：spec 的 `cargo build` 加 `--target-dir target`，不受 `CARGO_TARGET_DIR` 或 cargo 設定的 `target-dir` 影響；
+  `build-rpm.sh` 新增環境變數 `DEX2PC_DIST_DIR`（預設 `dist`，測試用）並只印出這次建出的 rpm。
+  回歸測試 `build_script_succeeds_when_cargo_target_dir_points_elsewhere` 在舊 spec 下失敗、修正後通過。
+
+- **F2 完成**（2026-10-10）：rpm 現在裝 `/usr/bin/dex2pc`、`/usr/share/applications/dex2pc.desktop`（取自 `packaging/common/`）、
+  `%license LICENSE`、`%doc README.md`；`Requires: android-tools`、`Requires: scrcpy >= 3.2`（下限對應 `src/doctor.rs` 的 `MIN_SCRCPY`，要一起改）。
+  - **新增 `LICENSE`**：repo 原本沒有授權檔，`Cargo.toml` 宣告 Apache-2.0，這裡放標準的 Apache-2.0 全文（取自本機 abseil-cpp 套件的同一份標準文字）。
+  - spec 加 `BuildRequires: desktop-file-utils` 與 `%check`（desktop-file-validate）；binary 用 `install -s` 去除符號。
+  - `packaging/rpm/dex2pc.rpmlintrc`：過濾的項目都寫了原因（scrcpy 拼字、未簽章、Packager/Group、SPDX 授權識別碼；URL 與 man page 附 TODO 條件）。
+    rpmlint 結果 0 errors、0 warnings。
+  - 測試 `tests/rpm_contents.rs`（6 個）共用一次 build-rpm.sh，用 rpm/rpm2cpio 檢查檔案、相依、packaged 的 .desktop 與 rpmlint；缺工具時本機略過，設了 `CI` 就失敗。
+  - **rpmlint 本機沒裝**，我裝在 /tmp/rl 的 venv（`pip install rpmlint`，不在 repo 內）驗證；CI 需要安裝 rpmlint。
+  - 下一步：F3（Fedora 容器煙霧測試，需 COPR）或 deb 軌道 F8。
+- **F2 審查修正**：新增 `tests/common/mod.rs` 的 `require_tools`（只查 PATH、不執行工具）；build 相關測試先確認 rpmbuild、
+  desktop-file-validate（spec 的 `%check`）、git、tar、cargo、rpm、rpm2cpio、cpio 都在，本機缺工具就略過、設了 `CI` 就失敗。
+  解包函式 `extract_rpm` 同時檢查 rpm2cpio 與 cpio 的退出狀態（壞掉的 rpm 會讓 cpio 讀到空輸入而成功），有回歸測試。
+  共用的 build 產物改放在每個測試程式專屬的 tempdir，由 static fixture 持有；不再使用固定的 `target/rpm-contents-dist`，也沒有吞掉的清理錯誤。
+  取捨：static 不會 drop，暫存目錄（約 1 MB）留在系統暫存區由 OS 清理。
+
+- **F3 完成**（2026-10-10）：`packaging/smoke-test.sh [rpm]`：在 `registry.fedoraproject.org/fedora:latest`（可用 `DEX2PC_SMOKE_IMAGE` 換）容器內
+  安裝 dnf-plugins-core → `dnf copr enable zeno/scrcpy` → `dnf install` 這個 rpm → `dex2pc --version` 對版號 →
+  `dex2pc doctor`（容器沒有手機，預期印出「找不到裝置」且不被訊號殺掉）→ `dnf remove` 後確認 `/usr/bin/dex2pc` 與 `.desktop` 都消失。
+  - **已在本機實跑通過**（podman、Fedora 44 映像；COPR zeno/scrcpy 目前提供 scrcpy 5.0.1，滿足 `>= 3.2`；`cargo build --locked` 在 build-rpm.sh 於容器外跑，沒有進容器）。
+  - 略過規則：沒有 podman/docker、拉不到映像、容器內連不到 COPR（退出碼 77）→ 本機 exit 0 並印原因；設了 `CI` 則 exit 1。
+  - 測試放在 `tests/rpm_contents.rs`：真的跑一次煙霧測試（共用已建好的 rpm，約 40 秒，要網路），以及「沒有容器引擎」本機略過／CI 失敗兩個測試。
+  - `dnf remove` 會連同為了 scrcpy 裝進來的相依一起移除（約 300 個套件），輸出很長；腳本已加 `-q`。
+  - 下一步：deb 軌道 F8（可與 rpm 軌道的 F5 文件平行），之後 F9。
+- **F3 審查修正**：
+  - 容器內的步驟拆到 `packaging/smoke-test-inner.sh`（外層 `smoke-test.sh` 掛載進容器執行），好讓判斷邏輯能用假指令測試。
+  - doctor 驗證收緊：沒有手機時要求退出碼**剛好是 1** 且輸出含「找不到裝置」；0、101（panic）、128 以上（訊號）或缺訊息都失敗。
+  - 網路失敗分類：所有 dnf 步驟（含安裝 rpm 時下載 COPR 的 scrcpy）都經 `run_dnf`，輸出符合已知網路／COPR 無法連線特徵才回 77
+    （本機略過、CI 失敗），其餘一般錯誤保持 1。特徵清單寫在 inner 腳本開頭，遇到新的訊息再補。
+  - 新增 `tests/smoke_logic.rs`（14 個）：假的 dnf／dex2pc／podman，不需要網路或容器，本機與 CI 都跑。
+  - `tests/rpm_contents.rs` 模擬本機的略過測試改成 `env_remove("CI")`；真正的煙霧測試保留繼承的 CI。
+  - 已用真實 Fedora 44 容器重跑通過。
+- **F3 tester 修正**：`smoke-test-inner.sh` 的網路特徵移除 `Failed to resolve`（dnf5 缺相依時印的是
+  `Failed to resolve the transaction`，會被誤判成網路問題而在本機被略過）；也移除 403/404（COPR 名稱打錯也是 404），只收伺服器端 5xx。
+  新增 404→1、503→77 兩個測試；完整測試（含真實容器煙霧測試）通過。
+- **F3 審查修正（網路分類）**：`smoke-test-inner.sh` 改成只看具體原因。先找一般失敗的證據（HTTP 4xx、`Curl error (22)`、
+  `Failed to resolve the transaction`、找不到套件、衝突），有就是失敗；沒有時才看具體連線問題（DNS、連不上、逾時、curl 6/7/28/35/52/56、5xx）。
+  不再把籠統的 `Failed to download metadata`／`Cannot download`／`Curl error` 當成網路證據；同一份輸出同時有 DNS 與 404 時以失敗為準（保守）。
+  新增 4 個回歸測試（共 25 個），其中 3 個在舊邏輯下失敗。真實容器煙霧測試仍通過。
+- **F3 審查修正（curl 22）**：`Curl error (22)` 不再單獨當成一般失敗的證據（它只代表 HTTP 回應是錯誤，4xx 與 5xx 都會有）；
+  改由實際的 HTTP 狀態決定：4xx 仍優先判為失敗，5xx 仍判為連線問題（77）。新增「完整下載錯誤＋curl 22＋503 → 77」與
+  「curl 22 沒有 HTTP 狀態 → 1」兩個測試（共 28 個），前者在舊邏輯下失敗。
+
+- **F8 完成**（2026-10-10）：`packaging/build-deb.sh`（dpkg-deb、`--root-owner-group`、xz）、`packaging/deb/copyright`（DEP-5，指向 common-licenses 的 Apache-2.0）、
+  `packaging/README.md`（deb 的對應表與建置工具選擇）、`tests/deb.rs`（11 個）。
+  - 先修了 `version.sh` 對 CRLF `Cargo.toml` 的問題（獨立 commit），因為 deb 腳本也靠它取版號。
+  - deb：`dex2pc_<版號>_amd64.deb`，Version 就是 Cargo.toml 的版號（沒有 Debian revision）；`Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= 3.2)`；
+    裝 `/usr/bin/dex2pc`、`/usr/share/applications/dex2pc.desktop`（共用檔）、README、copyright、changelog.Debian.gz；檔案擁有者 root/root。
+  - scrcpy 下限現在在三處（`src/doctor.rs`、rpm spec、`build-deb.sh` 的 `min_scrcpy`），`tests/deb.rs` 檢查 doctor 與 build-deb.sh 一致，rpm 的由 `tests/rpm_contents.rs` 檢查。
+  - **尚未驗證**：deb 沒有在真實 Debian 13／Ubuntu 26.04 上安裝過（F9 做）；lintian 本機沒裝，沒跑；`libc6` 沒有版本下限（沒有 dpkg-shlibdeps）。
+  - 本機實跑：`dpkg-deb -I/-c` 欄位與內容正確；把 scrcpy 改成 Recommends 的變異測試會讓 2 個測試失敗。
+  - 下一步：F9（Debian／Ubuntu 容器煙霧測試）；rpm 軌道剩 F5（文件）。
+
+- 修正（審查）：`build-deb.sh` 在非 x86_64 主機直接拒絕，並在打包前用 `readelf -h` 確認執行檔是 x86-64；`tests/deb.rs` 新增 3 個測試（套件內執行檔的 ELF 架構、非 x86_64 主機拒絕、非 x86-64 執行檔拒絕）。
+
+- F9 完成（deb 容器煙霧測試）：
+  - 新增 `packaging/smoke-test-deb.sh <映像> [deb]`（外層：引擎、拉映像、掛載；短名稱補成 `docker.io/library/…`）與 `smoke-test-deb-inner.sh`（容器內：`apt-get update` → 回報倉庫 scrcpy 版本 → 必要時 equivs 假 scrcpy 3.2 → `apt install` → `--version` → `doctor` → `apt remove` 並確認檔案消失）。退出碼 77 = 連不到網路／倉庫（本機略過、CI 失敗）。
+  - apt 錯誤分類沿用 F3 的兩階段（先找一般失敗證據：404、Unable to locate、unmet dependencies…；沒有才看 DNS／連線／5xx）；內層固定 `LC_ALL=C`；`apt-get update` 加 `APT::Update::Error-Mode=any`，否則部分倉庫抓不到時仍回傳 0。
+  - 實跑結果（本機 podman）：Debian 13 與 Ubuntu 26.04 都通過。**倉庫 scrcpy：Debian 13 沒有；Ubuntu 26.04 是 3.3.4-1**。Debian 13 走假 scrcpy（輸出有註明），所以那裡 `doctor` 回報缺 scrcpy 是預期。
+  - 發現：Debian 13／Ubuntu 26.04 沒有名為 `android-tools-adb` 的真套件，是 `adb` Provides 它；`Depends: android-tools-adb` 能被 apt 滿足（實測安裝成功），README 已註明。
+  - lintian（Debian 13 容器）：0 error；抓到 native 套件的 changelog 應叫 `changelog.gz`，已從 `changelog.Debian.gz` 改名（build-deb.sh、tests/deb.rs）；剩 `no-manual-page` warning。
+  - 測試：`tests/smoke_deb_logic.rs`（31 個，假 apt-get／apt-cache／dpkg／equivs-build／dex2pc／podman），變異檢查：把 scrcpy 版本比較 `ge` 改 `gt` 會讓「剛好等於下限」測試失敗；`tests/deb.rs` +1（README 內容）。
+  - 下一步：F4（GitHub Actions）；F5、F10 文件；F6 實機。
+
+- F4 完成（GitHub Actions）：
+  - `.github/workflows/ci.yml`（push／PR／workflow_call）：`workflow-lint`（docker 跑 actionlint 1.7.7）、`verify`（fmt、clippy、`cargo test --locked`）、`package`（build-rpm、build-deb、lintian、上傳 artifact）、`smoke`（matrix：rpm／Debian 13／Ubuntu 26.04，下載 artifact 後跑煙霧測試）。不含任何 tags／paths 過濾，PATCH 版照跑。
+  - `.github/workflows/release.yml`（只有 `v*.*.0` tag）：`check-tag` → `ci`（重用 ci.yml）→ `release`（SHA256、CHANGELOG notes、`gh release create --verify-tag`）；只有 release job 有 `contents: write`，只用 `GITHUB_TOKEN`。
+  - `.github/actions/setup-packaging`：安裝 rpm、rpmlint、desktop-file-utils、cpio、binutils、lintian、rustfmt／clippy。
+  - `packaging/check-tag.sh`（tag 必須是 `vX.Y.0` 且等於 Cargo.toml 版號）、`packaging/release-notes.sh`（擷取 CHANGELOG 該版本段落，找不到或是空的就失敗）。
+  - 測試：`tests/release.rs`（25 個：腳本行為 + workflow 文字結構 + 有 actionlint 時執行它）。本機用 podman 跑 `rhysd/actionlint:1.7.7`，兩個 workflow 與 composite action 都沒有問題。
+  - **需要使用者操作／只能在 GitHub 驗證**：(1) 推一般分支確認 `ci.yml` 全綠（尤其 Ubuntu runner 上的 rpm 建置與 rpmlint、runner 上的 podman 能拉 Fedora／Debian／Ubuntu 映像）；(2) 之後 MINOR 進版時推 `vX.Y.0` tag，確認 Release 建立、附件與 `.sha256`、notes；(3) 確認 repo 的 Actions 權限允許 workflow 建立 Release（Settings → Actions → General → Workflow permissions 不能是完全唯讀以外的限制導致 `contents: write` 被拒）。
+  - 下一步：F5（rpm 文件）、F10（deb 文件）、F6（實機驗收）。
+  - 在 `ubuntu:24.04` 容器（rpm 4.18.2、rpmlint 2.5.0，和 GitHub 的 ubuntu-latest 相同工具鏈）模擬 CI 跑完整測試，抓到兩個 Ubuntu 才有的問題並修好：rpm 的文件／授權目錄會帶版號（`/usr/share/doc/dex2pc-0.2.0`），spec 加 `%global _docdir_fmt %{name}` 與 `_build_id_links none`；無 `%dist` 的檔名 `dex2pc-0.2.0-1.x86_64.rpm` 原本對不上 smoke-test.sh 的 glob，已放寬。修好後該容器內 fmt、clippy、全部測試、build-rpm、build-deb、`lintian --fail-on error` 全過。模擬容器裡沒有 podman，所以容器內安裝的測試在那裡是略過的（GitHub runner 有 podman，且 CI 不可略過）。
+
+- F5 完成（rpm 文件）：
+  - README「安裝」拆成「方式一：rpm 安裝包（Fedora x86_64）」與「方式二：cargo install」。rpm 段有可複製的 `sudo dnf copr enable zeno/scrcpy` → `sudo dnf install ./dex2pc-*.rpm`、沒啟用 COPR 會失敗的說明、`.sha256` 檢查、與 cargo install 的差別（捷徑由套件提供）、PATCH 版只有 CI artifact、自建 rpm 步驟（`rpm-build cargo rust desktop-file-utils git tar` + `build-rpm.sh`）、`sudo dnf remove dex2pc`。`install-desktop` 的說明標明只有 cargo install 需要。
+  - CHANGELOG [Unreleased] 新增「### 新增」：rpm 安裝包與 CI／Release 規則（使用者看得懂的說法）。
+  - 版本 badge 檢查（`examples/sync_version_badge.rs`）照常通過；版號沒有變動（進版是 MINOR 驗收後的事，不在這個功能）。
+  - 測試：`tests/docs.rs` +6（指令順序、Fedora only／失敗說明、捷徑差異、自建與移除、PATCH 版、CHANGELOG）。
+  - README 的 GitHub Releases 連結用相對路徑 `../../releases`（沒有 git remote 可確認實際網址）。
+  - 下一步：F10（deb 文件）、F6（實機驗收）。
+  - F5 審查修正：「快速開始」與 doctor／參數範例改成安裝後可直接用的 `dex2pc …`（rpm 使用者不需要 Rust），`cargo run` 只留在「建置與執行」（標明開發用）；建置指令的測試改成寫死 `rpm-build cargo rust desktop-file-utils git tar`，不再從 spec 推導。順手確認 Fedora 的 `rust` 套件 Requires `/usr/bin/cc`，所以不用另外列 gcc。
+
+- F10 完成（deb 文件）：
+  - README「安裝」新增「方式二：deb 安裝包」（cargo install 改為方式三）：只支援 Debian 13 / Ubuntu 26.04 以上 amd64；Ubuntu 26.04 直接 `sudo apt install ./dex2pc_*.deb`；Debian 13 先裝 scrcpy 官方靜態版（`/opt/scrcpy` + `/usr/local/bin/scrcpy` 連結），再用 equivs 建「佔位」scrcpy 套件滿足 `Depends`，最後裝 dex2pc；`doctor` 提示只有 Fedora 指令；`.sha256`／PATCH 版說明；`sudo apt remove dex2pc`；自建 deb（`sudo apt install cargo git gzip binutils dpkg` + `build-deb.sh`）。「需求」段落與 platform badge 改為 Fedora / Debian / Ubuntu。
+  - 查證（2026-10-11）：Debian trixie、trixie-backports、forky、sid 都**沒有** scrcpy 套件；scrcpy 官方 doc/linux.md 也把 Debian/Ubuntu 的 apt 版標為過時，建議用官方靜態版 `scrcpy-linux-x86_64-vX.tar.gz`（目前 v5.0.1）。
+  - 實跑：README 的 Debian 13 步驟在 debian:13 容器完整跑過（官方 scrcpy 5.0.1 + 佔位套件 + dex2pc deb），`dex2pc doctor` 列出 `scrcpy：5.0.1`，移除後 `/usr/bin/dex2pc` 消失。自建 deb 指令在 debian:13（cargo 1.85.1）與 ubuntu:26.04（cargo 1.93.1）容器都建置成功。
+  - CHANGELOG [Unreleased]「新增」加一條 deb 安裝包。版本 badge 檢查照常通過。
+  - 測試：`tests/docs.rs` +6。
+  - 下一步：F6（實機驗收，需要使用者操作）。
+  - F10 審查修正：Debian 13 的 scrcpy 步驟改成「每個版本解壓到 `/opt/scrcpy/scrcpy-linux-x86_64-v<版號>/`，`ln -sf` 把 `/usr/local/bin/scrcpy` 指向要用的版本，`scrcpy --version` 確認後才建佔位套件」，避免升級時 `mv` 把新版塞進舊目錄。補上「更新 scrcpy」說明。測試改成寫死 5.0.1，分別檢查下載 URL、解壓目錄與連結、佔位 Version、佔位 deb 檔名、升級說明。
+  - 容器驗證（debian:13，照 README 指令）：先裝 3.3.4 + 佔位 3.3.4 + dex2pc（doctor 顯示 3.3.4）→ 不移除 dex2pc 直接升級到 5.0.1（`scrcpy --version`、`dpkg-query` 的佔位版本、doctor 都是 5.0.1）→ 同版本再做一次也正常；dex2pc 一直維持已安裝。
+
+- F6（實機驗收清單）：README「實機驗收清單」新增「安裝包」段（rpm／deb 安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失，三個發行版各做一次）；progress.md 新增「實機驗收清單」段，另列 GitHub 上才能確認的 CI／Release 項目。**`passes` 維持 false**：功能步驟規定要使用者實機確認後才能標完成，這裡沒有實機可測。

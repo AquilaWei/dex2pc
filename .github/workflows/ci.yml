@@ -1,0 +1,69 @@
+name: CI
+
+# 每次 push 與 PR 都跑（含 PATCH 版）；也給 release.yml 以 workflow_call 重用，
+# 這樣 tag 發佈前跑的就是同一套檢查。tag 的 push 不會觸發這裡（branches 只含分支）。
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-packaging
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      # 完整測試，含 rpm / deb 的內容檢查與容器內安裝測試（GitHub 會設定 CI 環境變數，缺工具或連不上就失敗）
+      - run: cargo test --locked
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-packaging
+      - run: packaging/build-rpm.sh
+      - run: packaging/build-deb.sh
+      - name: lintian
+        run: lintian --fail-on error dist/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            dist/*.rpm
+            dist/*.deb
+          if-no-files-found: error
+
+  smoke:
+    needs: package
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rpm in Fedora
+            command: packaging/smoke-test.sh
+          - name: deb in Debian 13
+            command: packaging/smoke-test-deb.sh debian:13
+          - name: deb in Ubuntu 26.04
+            command: packaging/smoke-test-deb.sh ubuntu:26.04
+    name: smoke (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - run: ${{ matrix.command }}

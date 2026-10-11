@@ -1,0 +1,51 @@
+name: Release
+
+# 只有 MINOR 以上的版本（vX.Y.0）才發佈；PATCH 版（vX.Y.Z，Z 不為 0）不打 tag，所以不會走到這裡。
+# 流程：確認 tag 與 Cargo.toml 一致 → 跑完整 CI → 全部綠燈才建立 Release 並附上套件與 SHA256。
+on:
+  push:
+    tags: ["v*.*.0"]
+
+permissions:
+  contents: read
+
+jobs:
+  check-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml
+        env:
+          TAG: ${{ github.ref_name }}
+        run: packaging/check-tag.sh "$TAG"
+
+  ci:
+    needs: check-tag
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: dist
+      - name: SHA256 and release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          for file in *.rpm *.deb; do
+            sha256sum "$file" > "$file.sha256"
+          done
+          cd ..
+          packaging/release-notes.sh "${TAG#v}" > release-notes.md
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag

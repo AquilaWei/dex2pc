@@ -1,7 +1,7 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.2.0-blue)
-![platform](https://img.shields.io/badge/platform-Fedora%20Linux-294172)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
+![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
@@ -39,23 +39,113 @@ flowchart LR
 
 ## 需求
 
-- **電腦**：Fedora Linux（只支援 Linux）
+- **電腦**：Linux，安裝包支援 **Fedora**（rpm）、**Debian 13 / Ubuntu 26.04 以上**（deb）；其他發行版用 `cargo install`
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
-- **adb**：`sudo dnf install android-tools`
-- **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：`sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`
+- **adb**：Fedora `sudo dnf install android-tools`；Debian / Ubuntu `sudo apt install adb`（用安裝包時會自動裝）
+- **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：Fedora `sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`；Debian / Ubuntu 見下方 deb 安裝
 - **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
-- 建置需要 Rust（cargo）
+- 從原始碼建置才需要 Rust（cargo）；用安裝包不需要
 
 ## 安裝
+
+三種方式擇一：**rpm 安裝包**（Fedora x86_64）、**deb 安裝包**（Debian 13 / Ubuntu 26.04 以上，amd64），或 **`cargo install`**（從原始碼，其他發行版）。
+
+### 方式一：rpm 安裝包（Fedora x86_64）
+
+rpm **只支援 Fedora（x86_64）**。套件強制相依 `android-tools` 與 `scrcpy >= 3.2`，而 Fedora 官方倉庫沒有夠新的 scrcpy，所以要**先啟用 COPR**：
+
+```bash
+sudo dnf copr enable zeno/scrcpy
+sudo dnf install ./dex2pc-*.rpm
+```
+
+- **沒有啟用 COPR 就安裝會失敗**：dnf 會回報找不到 `scrcpy >= 3.2`，先執行上面第一行再重試
+- rpm 從 [GitHub Releases](../../releases) 下載，旁邊的 `.sha256` 檔可用 `sha256sum -c dex2pc-*.rpm.sha256` 檢查下載有沒有損壞
+- **正式安裝包只來自 MINOR 以上的版本（`vX.Y.0`）的 Release**；PATCH 版（`X.Y.Z`，Z 不為 0）不發佈 Release，只有 CI 每次建置時上傳的 artifact（GitHub Actions 該次執行頁面的 Artifacts），供測試用
+- 與 `cargo install` 的差別：rpm 會把應用程式選單的**捷徑一併裝好**（`/usr/share/applications/dex2pc.desktop`），**不必再跑 `dex2pc install-desktop`**；dex2pc 裝在 `/usr/bin/dex2pc`，不需要 Rust
+- 移除：
+
+```bash
+sudo dnf remove dex2pc
+```
+
+**從原始碼自己建 rpm**（例如要裝 PATCH 版，或修改過程式碼）：
+
+```bash
+sudo dnf install rpm-build cargo rust desktop-file-utils git tar
+packaging/build-rpm.sh                 # 產出 dist/dex2pc-<版號>-1.<dist>.x86_64.rpm
+sudo dnf copr enable zeno/scrcpy
+sudo dnf install ./dist/dex2pc-*.rpm
+```
+
+打包的細節見 [`packaging/README.md`](packaging/README.md)。
+
+### 方式二：deb 安裝包（Debian 13 / Ubuntu 26.04 以上，amd64）
+
+deb **只支援 Debian 13（trixie）與 Ubuntu 26.04 以上，amd64**。套件強制相依 `android-tools-adb`（由 `adb` 套件提供）與 `scrcpy (>= 3.2)`。
+
+**Ubuntu 26.04**：倉庫的 scrcpy 是 3.3.4，夠新，直接安裝：
+
+```bash
+sudo apt install ./dex2pc_*.deb
+```
+
+**Debian 13**：倉庫**沒有 scrcpy**（trixie、trixie-backports、testing、unstable 都沒有，2026-10 查證），直接 `apt install` 會因為找不到 `scrcpy (>= 3.2)` 而失敗。先裝 scrcpy 官方的靜態版，再建一個「佔位」套件告訴 apt scrcpy 已經裝好：
+
+```bash
+# 1. 官方靜態版（版本號換成 https://github.com/Genymobile/scrcpy/releases/latest 的最新版）
+#    每個版本解壓到 /opt/scrcpy 底下自己的目錄，/usr/local/bin/scrcpy 連結指向要用的那一版
+wget https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz
+sudo mkdir -p /opt/scrcpy
+sudo tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz -C /opt/scrcpy
+sudo ln -sf /opt/scrcpy/scrcpy-linux-x86_64-v5.0.1/scrcpy /usr/local/bin/scrcpy
+scrcpy --version     # 第一行要是 scrcpy 5.0.1，確認後才做第 2 步
+
+# 2. 佔位套件：只用來滿足 dex2pc 的 Depends，裡面沒有任何檔案；Version 填上面確認到的版本
+sudo apt install equivs
+printf 'Package: scrcpy\nVersion: 5.0.1\nMaintainer: local <root@localhost>\nArchitecture: all\nDescription: placeholder for scrcpy installed under /opt/scrcpy\n' > scrcpy-placeholder
+equivs-build scrcpy-placeholder
+sudo apt install ./scrcpy_5.0.1_all.deb
+
+# 3. 安裝 dex2pc
+sudo apt install ./dex2pc_*.deb
+```
+
+- 以上步驟已在 Debian 13 容器實際跑過：`dex2pc doctor` 會列出 `scrcpy：5.0.1`
+- **更新 scrcpy**：把第 1、2 步的 `5.0.1` 全部換成新版號重做一次。新版會解壓到自己的目錄，`ln -sf` 把連結改指向新版；
+  `scrcpy --version` 確認是新版後再重建佔位套件，`apt install` 會把佔位套件升級成新版號（不用先移除 dex2pc）。
+  舊版目錄確認不用後可刪：`sudo rm -rf /opt/scrcpy/scrcpy-linux-x86_64-v<舊版號>`
+- 其他 scrcpy 低於 3.2 的發行版處理方式相同
+
+**共通說明**：
+
+- deb 從 [GitHub Releases](../../releases) 下載，`.sha256` 檔的用法同 rpm；**PATCH 版不發佈 Release**，只有 CI 的 artifact
+- 和 rpm 一樣附好應用程式選單的捷徑，不必再跑 `dex2pc install-desktop`
+- **`dex2pc doctor` 的安裝提示目前只列 Fedora 的 `dnf` 指令**；Debian / Ubuntu 使用者看到時請照這一段 README 安裝，不要照提示執行
+- 移除：
+
+```bash
+sudo apt remove dex2pc
+```
+
+**從原始碼自己建 deb**：
+
+```bash
+sudo apt install cargo git gzip binutils dpkg
+packaging/build-deb.sh                 # 產出 dist/dex2pc_<版號>_amd64.deb，只能在 x86_64 主機上建
+sudo apt install ./dist/dex2pc_*.deb
+```
+
+### 方式三：`cargo install`
 
 ```bash
 cargo install --path .     # 編譯並安裝到 ~/.cargo/bin/dex2pc
 dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX」捷徑
 ```
 
-`~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。
+`~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。adb 與 scrcpy 要自己裝，見上面的「需求」。
 
-**應用程式選單捷徑**：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
+**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
 
 - 捷徑記錄的是**執行指令當下的 dex2pc 絕對路徑**，所以請在 `cargo install` 之後用 `dex2pc install-desktop` 建立，不要用 `cargo run`（會指向 `target/` 裡的檔案）
 - 重複執行只會覆寫同一個檔案；移除用 **`dex2pc install-desktop --uninstall`**
@@ -69,18 +159,18 @@ dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX�
 3. 執行：
 
 ```bash
-cargo run --release -- start
+dex2pc start
 ```
 
-（已用 `cargo install --path .` 安裝時直接執行 **`dex2pc start`**。）
+（用 rpm 或 `cargo install` 安裝後都是直接執行 `dex2pc`；還沒安裝、在原始碼目錄裡試用時，把 `dex2pc` 換成 `cargo run --release --`，見「[建置與執行](#建置與執行)」。）
 
 `start` 會先做和 `doctor` 一樣的檢查，全部通過才以虛擬顯示器開啟 **Samsung DeX** 視窗；直接用電腦的鍵盤滑鼠操作，**關閉視窗即結束**。
-有問題時照畫面上的訊息處理，或先跑 `cargo run -- doctor` 看完整檢查結果。
+有問題時照畫面上的訊息處理，或先跑 `dex2pc doctor` 看完整檢查結果。
 
 ```bash
-cargo run -- start --dry-run               # 只印出會執行的 scrcpy 指令，不連手機
-cargo run -- start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
-cargo run -- start --watch                 # 拔線或斷線後，手機接回來自動重新開啟視窗
+dex2pc start --dry-run                     # 只印出會執行的 scrcpy 指令，不連手機
+dex2pc start --resolution 2560x1440 --video-bit-rate 16M   # 臨時覆寫設定檔
+dex2pc start --watch                       # 拔線或斷線後，手機接回來自動重新開啟視窗
 ```
 
 **`--watch` 自動重連**：scrcpy 因手機斷線結束時，dex2pc 會等手機重新接上，再自動開啟視窗。
@@ -102,6 +192,8 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
 
 ## 建置與執行
+
+以下是**開發用**：在原始碼目錄裡用 `cargo run` 直接執行（已安裝的使用者把 `cargo run --` 換成 `dex2pc` 即可，不需要 Rust）。
 
 ```bash
 cargo build --release
@@ -158,6 +250,13 @@ cargo run --example sync_version_badge
 - [x] **Ctrl+C**：在執行 `dex2pc start --watch` 的終端機按 Ctrl+C，程式結束、視窗關閉、不再重連（2026-10-10）
 - [x] **小字清晰度與操作延遲**：預設位元率下沒有問題（2026-10-10）；小字模糊時可用 `--video-bit-rate 16M`（或更高）
 - [ ] 應用程式選單的「Samsung DeX」捷徑能開啟視窗（暫不驗收）
+
+**安裝包**：容器裡只確認過安裝、`--version`、`doctor` 與移除，沒有桌面環境也沒接手機。以下每一項在 **Fedora（rpm）**、**Debian 13（deb）**、**Ubuntu 26.04（deb）** 的實體主機上各做一次：
+
+- [ ] **安裝**：照上方「安裝」的指令裝好，`dex2pc --version` 印出版號
+- [ ] **選單捷徑**：不跑 `dex2pc install-desktop`，應用程式選單就出現「Samsung DeX」（可能要重新登入才會出現）
+- [ ] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
+- [ ] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
 
 ## 頻寬：USB 2.0 就夠嗎？
 

@@ -1,155 +1,120 @@
 {
   "features": [
     {
-      "id": "F1",
-      "description": "專案骨架：Rust binary crate dex2pc（cargo，版號只寫在 Cargo.toml），用 clap 提供 `dex2pc` CLI 入口，設定 rustfmt 與 clippy，附 README 與 CHANGELOG 初稿；目標平台只有 Linux（Fedora）",
+      "id": "F11",
+      "description": "打包共用基礎（rpm 與 deb 平行開發前先做完）：packaging/common/ 放共用的 dex2pc.desktop 與讀取 Cargo.toml 版號的 version.sh，並把 dist/ 加進 .gitignore",
       "steps": [
-        "`cargo run -- --version` 印出 `dex2pc 0.1.0` 並以 exit code 0 結束，版號取自 CARGO_PKG_VERSION 而不是寫死字串",
-        "`cargo run -- --help` 列出子指令區塊（之後的功能會往裡面加）",
-        "有一個整合測試以 std::process::Command 執行編出的 binary（CARGO_BIN_EXE_dex2pc），驗證 --version 輸出含 Cargo.toml 的版號",
-        "`cargo fmt --check` 與 `cargo clippy --all-targets -- -D warnings` 皆無錯誤",
-        "Cargo.lock 已提交；.gitignore 排除 target/、CLAUDE.md、.claude/",
-        "README 寫明專案目的（透過 USB-C 線把 Samsung DeX 以視窗形式顯示在 Linux 電腦上，並用電腦鍵鼠操作）、需求（Fedora、One UI 8 以上、adb、scrcpy）、怎麼建置與執行，並用一小段說明 scrcpy 是什麼、為什麼畫面是經 USB 資料通道傳送而不是 DisplayPort"
+        "`packaging/common/version.sh` 在專案根目錄輸出 Cargo.toml 的 version（例如 `0.2.0`），不含換行以外的字元；放在別的工作目錄執行也得到相同結果",
+        "`packaging/common/dex2pc.desktop` 的 Exec 為 `dex2pc start`（不含絕對路徑、不加 --watch），`desktop-file-validate` 通過（工具缺少時略過）",
+        "`.gitignore` 排除 `dist/`，`git status` 在產生 dist/ 後仍乾淨",
+        "整合測試（tests/packaging_common.rs）檢查上述三項；預期的版號與 Exec 字串直接寫死在測試裡"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F1",
+      "description": "建立 packaging/rpm/dex2pc.spec 與 packaging/build-rpm.sh：用 rpmbuild 在本機產出 dex2pc 的 binary rpm（x86_64，Fedora）；Version 由 Cargo.toml 讀取，不另外寫死；打包檔依格式分目錄（packaging/rpm/），共用檔（.desktop）放 packaging/common/，deb 也沿用同一套結構（packaging/deb/）",
+      "steps": [
+        "`packaging/build-rpm.sh` 在乾淨的 checkout 上執行後，於 `dist/` 產出 `dex2pc-<Cargo.toml 版號>-1.*.x86_64.rpm`",
+        "`rpmspec -P packaging/rpm/dex2pc.spec` 可解析且無錯誤",
+        "整合測試（tests/rpm.rs）檢查 spec 的 Version 等於 Cargo.toml 的 version；本機沒有 rpmbuild 時自動略過，CI 一定要跑"
       ],
       "passes": true
     },
     {
       "id": "F2",
-      "description": "`dex2pc doctor`：檢查電腦端相依工具 adb 與 scrcpy 是否存在、scrcpy 版本是否支援 --new-display（>= 3.0），缺少時給出 Fedora 的安裝指令；所有外部指令都經過可替換的 CommandRunner trait",
+      "description": "rpm 內容與相依：安裝 /usr/bin/dex2pc、授權檔、README、全系統的 /usr/share/applications/dex2pc.desktop（沿用 F11 建立的 packaging/common/dex2pc.desktop）；Requires android-tools 與 scrcpy（強制相依）",
       "steps": [
-        "解析 `scrcpy --version` 輸出的函式：輸入 'scrcpy 3.3.1 <https://github.com/Genymobile/scrcpy>' 得到 (3, 3, 1)",
-        "版本 < 3.0 時 doctor 回報不支援虛擬顯示並以非 0 結束",
-        "找不到 adb 時 doctor 回報缺少 adb，並印出 `sudo dnf install android-tools`",
-        "找不到 scrcpy 時 doctor 回報缺少 scrcpy，並印出 Fedora 的安裝方式（實作時查證目前建議的來源，例如 COPR）",
-        "兩者都正常時 doctor 以 exit code 0 結束並列出偵測到的版本",
-        "所有測試用假的 CommandRunner 回傳寫死的輸出，不需要真的安裝 adb 或 scrcpy"
+        "`rpm -qlp dist/*.rpm` 列出 /usr/bin/dex2pc、/usr/share/applications/dex2pc.desktop、授權檔與 README，且沒有 target/ 或其他建置產物",
+        "`rpm -qRp dist/*.rpm` 含 android-tools 與 scrcpy（Requires，不是 Recommends）",
+        "`desktop-file-validate` 通過系統 .desktop 檔；其 Exec 為 `dex2pc start`（不含絕對路徑、不加 --watch）",
+        "`rpmlint` 對產出的 rpm 沒有 error（warning 逐項處理或在文件說明原因）",
+        "測試以 rpm 指令檢查上述項目，工具缺少時略過"
       ],
       "passes": true
     },
     {
       "id": "F3",
-      "description": "裝置偵測：解析 `adb devices -l`，處理沒有裝置、未授權（unauthorized）、多台裝置的情況，並可用 --serial 指定裝置",
+      "description": "在 Fedora 容器內安裝 rpm 並做啟動驗證，確認 rpm 在真實環境可用",
       "steps": [
-        "沒有裝置時回報「請用支援資料傳輸的 USB-C 線連接手機並開啟 USB 偵錯」（提醒有些線只能充電）並以非 0 結束",
-        "裝置狀態為 unauthorized 時提示在手機上按允許 USB 偵錯",
-        "只有一台 device 狀態的裝置時自動選它",
-        "多台裝置且沒給 --serial 時列出所有序號並要求指定",
-        "--serial 指定不存在的序號時明確報錯",
-        "測試以寫死的 `adb devices -l` 輸出字串餵入解析器"
-      ],
-      "passes": true
-    },
-    {
-      "id": "F4",
-      "description": "裝置能力檢查：讀取手機品牌、型號、Android SDK 與 One UI 版本（ro.build.version.oneui），確認是 Samsung 且 One UI >= 8；不符合時直接報錯，不提供鏡像退路（使用者確定手機為 One UI 8 以上）",
-      "steps": [
-        "ro.build.version.oneui = '80000' 解析為 One UI 8.0；'70100' 解析為 7.1",
-        "Samsung + One UI 8.0 判定為支援",
-        "Samsung + One UI 7.x 判定為不支援，錯誤訊息說明需 One UI 8 以上",
-        "非 Samsung 裝置（無 oneui 屬性）判定為不支援並說明原因",
-        "`dex2pc doctor` 在有裝置時一併印出型號、One UI 版本與判定結果",
-        "測試以假的 getprop 回傳值驅動，不需實機"
-      ],
-      "passes": true
-    },
-    {
-      "id": "F11",
-      "description": "USB 連線速度檢查：從 Linux sysfs（/sys/bus/usb/devices/*/serial 對應 adb 序號，讀同目錄的 speed）取得手機實際協商到的 USB 速度，`dex2pc doctor` 印出來；低於 USB 2.0（480 Mbps）時警告可能是線材或 hub 問題",
-      "steps": [
-        "假 sysfs 中序號相符的裝置 speed = '5000' 時，doctor 顯示「USB 5000 Mbps」且無警告",
-        "speed = '480' 時顯示 480 Mbps 且無警告（USB 2.0 對壓縮後的串流已足夠）",
-        "speed = '12' 時顯示警告，建議換支援資料傳輸的線或直接接主機板上的孔",
-        "sysfs 找不到對應序號（例如無線 adb）時顯示「無法判斷 USB 速度」，不視為錯誤",
-        "測試以暫存目錄建立假的 sysfs 目錄結構，sysfs 根目錄可注入"
-      ],
-      "passes": true
-    },
-    {
-      "id": "F5",
-      "description": "scrcpy 指令組裝：純函式，依設定產生 DeX 用的 argv（--new-display=WxH/DPI），包含視窗標題、位元率、音訊、鍵鼠模式、裝置序號",
-      "steps": [
-        "預設設定產生的 argv 含 `--new-display=1920x1080/160` 與 `--window-title=Samsung DeX`",
-        "指定 serial 時 argv 含 `--serial=<serial>`",
-        "鍵盤模式設為 uhid 時 argv 含 `--keyboard=uhid`；滑鼠同理",
-        "關閉音訊時 argv 含 `--no-audio`",
-        "位元率設為 16M 時 argv 含 `--video-bit-rate=16M`；未設定時不加此參數（沿用 scrcpy 預設 8M）",
-        "解析度或 DPI 不合法（0、負數、非數字）時回傳明確的錯誤",
-        "每個測試的預期 argv 直接寫死"
-      ],
-      "passes": true
-    },
-    {
-      "id": "F6",
-      "description": "設定檔：讀取 $XDG_CONFIG_HOME/dex2pc/config.toml（未設 XDG_CONFIG_HOME 時用 ~/.config）；欄位為解析度、DPI、位元率、音訊、鍵鼠模式、視窗標題；CLI 參數可覆寫設定檔，未設定的值用預設",
-      "steps": [
-        "沒有設定檔時使用內建預設值",
-        "設定檔中的 resolution = '2560x1440' 會反映到組出的 scrcpy argv",
-        "CLI 的 --resolution 覆寫設定檔中的值",
-        "設定檔有未知欄位或型別錯誤時回報檔案路徑與欄位名稱並以非 0 結束",
-        "`dex2pc config --path` 印出設定檔位置",
-        "測試用暫存目錄與注入的設定目錄路徑，不碰使用者真正的設定，也不在測試中改全域環境變數"
-      ],
-      "passes": true
-    },
-    {
-      "id": "F7",
-      "description": "`dex2pc start`：串起 doctor → 選裝置 → 能力檢查 → 組指令 → 啟動 scrcpy；支援 --dry-run 只印指令；裝置不支援時直接失敗",
-      "steps": [
-        "--dry-run 時印出完整 scrcpy 指令且不執行任何外部指令",
-        "支援的裝置會以 DeX 虛擬顯示模式啟動（以假的 CommandRunner 驗證收到的 argv）",
-        "裝置不支援（One UI < 8 或非 Samsung）時以非 0 結束且不啟動 scrcpy",
-        "scrcpy 非 0 結束時，dex2pc 以相同 exit code 結束並印出 scrcpy 的錯誤訊息",
-        "README 新增「快速開始」：接上 USB-C 線、開 USB 偵錯、執行 `dex2pc start`"
+        "`packaging/smoke-test.sh` 在 fedora 容器（podman/docker）內先啟用 COPR `zeno/scrcpy`，再 `dnf install` 產出的 rpm 成功（scrcpy 是強制相依，沒有 COPR 就裝不起來）",
+        "容器內 `dex2pc --version` 輸出 Cargo.toml 的版號",
+        "容器內 `dex2pc doctor` 能執行並回報沒有手機（不 crash）",
+        "`dnf remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
+        "沒有容器引擎或連不到 COPR 時，本機以明確訊息略過（exit 0）；CI 一定要跑，不可略過"
       ],
       "passes": true
     },
     {
       "id": "F8",
-      "description": "手機端前置設定：若實機驗證發現需要調整 adb settings 才能讓 DeX 出現在虛擬顯示器上（例如 freeform / desktop mode 相關開關），由 dex2pc 在啟動前套用、結束後還原原值",
+      "description": "packaging/build-deb.sh：用 dpkg-deb 在本機產出 dex2pc 的 .deb（amd64，Debian 13 與 Ubuntu 26.04 以上）；版號由 Cargo.toml 讀取，與 rpm 共用 packaging/common/ 的 .desktop 檔，不新增建置用的 crate",
       "steps": [
-        "先在實機上確認需要哪些設定，結果寫進 progress.md；若完全不需要，本功能改為只在 README 記錄結論",
-        "套用前先讀取並保存原值，scrcpy 結束（含 Ctrl+C）後還原",
-        "原值為 null（未設定）時還原動作為 `settings delete` 而非寫入 0",
-        "--keep-settings 時不還原",
-        "測試以假的 CommandRunner 驗證呼叫順序：讀原值 → 寫新值 → 啟動 scrcpy → 還原"
+        "progress.md 或 packaging/README.md 記錄 deb 所需的對應：control 的 Depends（adb、scrcpy 在 Debian/Ubuntu 的套件名稱）、建置方式候選（cargo-deb 或 dpkg-deb）、可重用的共用檔",
+        "`dpkg-deb -I` 顯示的 Version 等於 Cargo.toml 的 version，Architecture 為 amd64，Depends 含 `android-tools-adb` 與 `scrcpy (>= 3.2)`（強制相依，與 rpm 一致；下限需與 dex2pc 程式內檢查的 scrcpy 最低版本相同）"
       ],
       "passes": true
     },
     {
       "id": "F9",
-      "description": "自動重連：`dex2pc start --watch` 在 USB 線拔除或 scrcpy 斷線後等待裝置重新出現並自動重新啟動，Ctrl+C 乾淨結束",
+      "description": "在 Debian 13（trixie）與 Ubuntu 26.04 容器內安裝 deb 並做啟動驗證",
       "steps": [
-        "scrcpy 因裝置斷線結束時，watch 模式會呼叫 `adb wait-for-device` 後重新啟動",
-        "使用者主動關閉 scrcpy 視窗（正常結束）時不重連，dex2pc 結束",
-        "連續失敗達上限（預設 5 次）後放棄並以非 0 結束",
-        "重試間隔可注入，測試中設為 0，測試不實際等待"
+        "`packaging/smoke-test-deb.sh <image>` 在 debian:13 與 ubuntu:26.04 容器內用 `apt install ./dex2pc_*.deb` 安裝成功；倉庫的 scrcpy 不到 3.2 時，腳本改用以 equivs 建立、版本為 3.2 的假 scrcpy 套件滿足相依，並在輸出中註明，不假裝是真的 scrcpy",
+        "容器內 `dex2pc --version` 輸出 Cargo.toml 的版號",
+        "容器內 `dex2pc doctor` 能執行並回報沒有手機（不 crash）；其安裝提示仍是 Fedora 指令，README 需註明",
+        "`apt remove dex2pc` 後 /usr/bin/dex2pc 與 .desktop 都被移除",
+        "沒有容器引擎時本機明確略過（exit 0）；CI 一定要跑",
+        "腳本回報各映像檔倉庫實際的 scrcpy 版本，作為 README（F10）說明取得方式的依據"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F4",
+      "description": "GitHub Actions（Public repo）：每次 push/PR 都跑 verify 並建置 rpm 與 deb（含 PATCH 版）；只有 MINOR 以上的版本（X.Y.0）才有 tag `vX.Y.0` 並自動建置、附 SHA256、發佈到 GitHub Release，PATCH 版不打 tag、不發佈",
+      "steps": [
+        ".github/workflows 的 push 與 PR 流程跑 fmt、clippy、test、build-rpm、build-deb 與兩種煙霧測試，並上傳 rpm 與 deb artifact；版號是 PATCH 版（Z 不為 0）時也照跑",
+        "發佈流程只由符合 `v*.*.0` 的 tag 觸發；tag 與 Cargo.toml 版號不一致時 workflow 失敗；推 `vX.Y.Z`（Z 不為 0）的 tag 時不發佈",
+        "release 流程在 CI 綠燈後才建立 Release，附 rpm、deb 與各自的 `.sha256` 檔，release notes 取自 CHANGELOG 對應版本",
+        "workflow 只用內建的 GITHUB_TOKEN，不需要任何另外設定的 secret；使用 Public repo 免費的 GitHub-hosted runner，不依賴 self-hosted runner",
+        "workflow 通過 `actionlint`（有裝時）；實際發佈只能在推 tag 後於 GitHub 驗證，列入需要使用者操作的清單"
+      ],
+      "passes": true
+    },
+    {
+      "id": "F5",
+      "description": "文件同步（rpm 部分）：README 加入 rpm 安裝與移除方式、CHANGELOG 記錄、版號相關 badge 一致",
+      "steps": [
+        "README 的「安裝」段落有可直接複製的指令：先 `sudo dnf copr enable zeno/scrcpy`，再 `sudo dnf install ./dex2pc-*.rpm`，並說明與 `cargo install` 的差別（rpm 的捷徑由套件提供，不必再跑 install-desktop）",
+        "README 說明 rpm 只支援 Fedora（x86_64）；沒有啟用 COPR 時 dnf 會因為找不到 scrcpy 而失敗，要寫明",
+        "README 說明從原始碼自建 rpm 的步驟（需要的套件與 build-rpm.sh）與移除方式 `sudo dnf remove dex2pc`",
+        "CHANGELOG [Unreleased] 以使用者看得懂的話記錄新增 rpm 安裝包",
+        "既有的版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過",
+        "README 說明 PATCH 版只提供 CI 產出的 artifact，不發佈 Release；正式安裝包取自 MINOR 以上版本的 Release"
       ],
       "passes": true
     },
     {
       "id": "F10",
-      "description": "桌面整合與交付：`dex2pc install-desktop` 在 Linux 建立 .desktop 啟動捷徑；README 補齊圖文說明與「需要實機驗收」清單；版號進 0.x 測試版並更新 CHANGELOG",
+      "description": "文件同步（deb 部分）：README 加入 deb 安裝與移除方式、支援的 Debian/Ubuntu 版本、自建 deb 的步驟，CHANGELOG 記錄",
       "steps": [
-        "install-desktop 在 $XDG_DATA_HOME/applications（預設 ~/.local/share/applications）產生 dex2pc.desktop，Exec 指向 `dex2pc start`",
-        "重複執行不會產生重複檔案，--uninstall 會刪除它",
-        "測試以暫存目錄驗證產生的 .desktop 內容",
-        "README 說明用 `cargo install --path .` 安裝到 ~/.cargo/bin",
-        "README 列出實機驗收清單：DeX 視窗出現、滑鼠點擊/捲動、鍵盤輸入（含中文輸入）、剪貼簿、音訊、拔線重連、小字清晰度與操作延遲（必要時調高位元率）",
-        "README 有一段「頻寬」說明：壓縮後串流約 8–20 Mbps，USB 2.0 即足夠，瓶頸在手機編碼與延遲而非線材",
-        "CHANGELOG 與 README 版本 badge 與 Cargo.toml 版號一致"
+        "README 的「安裝」段落有可直接複製的 `sudo apt install ./dex2pc_*.deb`，並說明 scrcpy 倉庫版本若低於 3.2（`Depends: scrcpy (>= 3.2)` 會讓 apt 安裝失敗）要先怎麼取得新版，步驟依 F9 查到的倉庫版本決定",
+        "README 明列 deb 只支援 Debian 13 與 Ubuntu 26.04 以上（amd64）",
+        "README 說明 `doctor` 的安裝提示目前只列 Fedora 指令，Debian/Ubuntu 使用者請照 README 安裝",
+        "README 說明從原始碼自建 deb 的步驟與移除方式 `sudo apt remove dex2pc`",
+        "CHANGELOG [Unreleased] 記錄新增 deb 安裝包",
+        "版本 badge 同步檢查（examples/sync_version_badge.rs）仍通過"
       ],
       "passes": true
+    },
+    {
+      "id": "F6",
+      "description": "需要實機驗收的清單：在真實 Fedora 主機安裝 rpm、在真實 Debian/Ubuntu 主機安裝 deb，接手機確認 DeX 視窗與應用程式選單捷徑",
+      "steps": [
+        "README 或 progress.md 列出實機驗收項目：rpm 與 deb 各自的安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失",
+        "此功能由使用者實機確認後才可標為完成，不假裝已測過"
+      ],
+      "passes": false
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-  "questions": [
-    {
-      "question": "dex2pc 要「包裝 scrcpy」（呼叫現成的 scrcpy 負責畫面與鍵鼠，dex2pc 負責檢查、設定、一鍵啟動），還是不做程式、只要一份教學與啟動指令？",
-      "options": [
-        "包裝 scrcpy，做成一鍵啟動工具（照此計畫）",
-        "只要教學與一行啟動指令",
-        "先手動試 scrcpy 能不能跑出 DeX，再決定"
-      ]
-    }
-  ]
+  "questions": []
 }

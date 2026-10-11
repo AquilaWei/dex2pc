@@ -97,3 +97,231 @@ fn version_is_zero_x_test_release() {
     // F10：版號進 0.x 測試版，1.0 之前由使用者決定何時升 MAJOR
     assert!(env!("CARGO_PKG_VERSION").starts_with("0."));
 }
+
+#[test]
+fn readme_install_section_has_copyable_rpm_commands_with_copr_first() {
+    let install = section(README, "\n## 安裝\n");
+
+    let copr = install.find("sudo dnf copr enable zeno/scrcpy").unwrap();
+    let rpm = install.find("sudo dnf install ./dex2pc-*.rpm").unwrap();
+    assert!(copr < rpm, "COPR 要先於安裝 rpm");
+}
+
+#[test]
+fn readme_install_section_says_rpm_is_fedora_x86_64_only_and_fails_without_copr() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("只支援 Fedora（x86_64）"));
+    assert!(install.contains("沒有啟用 COPR 就安裝會失敗"));
+}
+
+#[test]
+fn readme_install_section_explains_rpm_ships_the_menu_shortcut_unlike_cargo_install() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("不必再跑 `dex2pc install-desktop`"));
+    assert!(install.contains("cargo install --path ."));
+}
+
+#[test]
+fn readme_install_section_documents_building_the_rpm_and_removing_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo dnf install rpm-build cargo rust desktop-file-utils git tar"));
+    assert!(install.contains("packaging/build-rpm.sh"));
+    assert!(install.contains("sudo dnf remove dex2pc"));
+}
+
+/// spec 的 `BuildRequires` 必須是這份清單。要改時兩處一起改：這份清單、spec，
+/// 而且 README 的建置指令要涵蓋新加的套件（下面的 README 測試會檢查）
+const RPM_BUILD_REQUIRES: [&str; 3] = ["cargo", "rust", "desktop-file-utils"];
+/// `build-rpm.sh` 用到、但不在 spec 的 `BuildRequires` 裡的工具
+const RPM_BUILD_TOOLS: [&str; 3] = ["rpm-build", "git", "tar"];
+
+#[test]
+fn readme_rpm_build_command_installs_the_tools_the_build_needs() {
+    // 固定清單與 spec 的 BuildRequires 共用同一份常數，改常數就會同時影響 spec 測試，兩邊不會各自漂移
+    let line = install_line(README, "sudo dnf install rpm-build");
+    let installed: Vec<&str> = line.split_whitespace().collect();
+
+    for tool in RPM_BUILD_REQUIRES.into_iter().chain(RPM_BUILD_TOOLS) {
+        assert!(
+            installed.contains(&tool),
+            "{tool} 不在 README 的指令：{line}"
+        );
+    }
+}
+
+#[test]
+fn spec_build_requires_are_exactly_the_list_the_readme_test_checks() {
+    let spec = include_str!("../packaging/rpm/dex2pc.spec");
+
+    let build_requires: Vec<&str> = spec
+        .lines()
+        .filter_map(|line| line.strip_prefix("BuildRequires:"))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect();
+
+    assert_eq!(build_requires, RPM_BUILD_REQUIRES);
+}
+
+/// 回傳含 `prefix` 的那一行（README 裡只出現一次的指令）
+fn install_line<'a>(doc: &'a str, prefix: &str) -> &'a str {
+    doc.lines()
+        .find(|line| line.starts_with(prefix))
+        .unwrap_or_else(|| panic!("找不到以 {prefix} 開頭的行"))
+}
+
+#[test]
+fn readme_quick_start_uses_the_installed_dex2pc_command_not_cargo_run() {
+    let quick_start = section(README, "\n## 快速開始\n");
+
+    assert!(quick_start.contains("dex2pc start\n"));
+    assert!(quick_start.contains("dex2pc doctor"));
+    assert!(quick_start.contains("dex2pc start --dry-run"));
+    assert!(quick_start.contains("dex2pc start --watch"));
+    assert!(
+        !quick_start.contains("cargo run -- start")
+            && !quick_start.contains("cargo run --release -- start")
+    );
+    assert!(!quick_start.contains("cargo run -- doctor"));
+}
+
+#[test]
+fn readme_keeps_cargo_run_in_the_development_section() {
+    let development = section(README, "\n## 建置與執行\n");
+
+    assert!(development.contains("開發用"));
+    assert!(development.contains("cargo run -- doctor"));
+}
+
+#[test]
+fn readme_install_section_says_patch_versions_are_artifacts_only() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("PATCH 版"));
+    assert!(install.contains("不發佈 Release"));
+    assert!(install.contains("artifact"));
+}
+
+#[test]
+fn changelog_0_3_0_announces_the_rpm_package_in_plain_words() {
+    let release = section(CHANGELOG, "\n## [0.3.0] - 2026-10-11\n");
+
+    assert!(release.contains("### 新增"));
+    assert!(release.contains("rpm 安裝包"));
+    assert!(release.contains("sudo dnf remove dex2pc"));
+}
+
+#[test]
+fn readme_install_section_has_copyable_apt_install_for_the_deb() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("\nsudo apt install ./dex2pc_*.deb\n"));
+}
+
+#[test]
+fn readme_install_section_says_deb_supports_only_debian_13_and_ubuntu_26_04_amd64() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("只支援 Debian 13（trixie）與 Ubuntu 26.04 以上，amd64"));
+}
+
+#[test]
+fn readme_install_section_explains_getting_scrcpy_on_debian_13_before_installing_the_deb() {
+    let install = section(README, "\n## 安裝\n");
+
+    // F9 查到的倉庫版本：Debian 13 沒有 scrcpy，Ubuntu 26.04 是 3.3.4
+    assert!(install.contains("倉庫**沒有 scrcpy**"));
+    assert!(install.contains("倉庫的 scrcpy 是 3.3.4"));
+    let official = install.find("scrcpy-linux-x86_64-v5.0.1.tar.gz").unwrap();
+    let placeholder = install
+        .find("sudo apt install ./scrcpy_5.0.1_all.deb")
+        .unwrap();
+    let dex2pc = install.rfind("sudo apt install ./dex2pc_*.deb").unwrap();
+    assert!(official < placeholder && placeholder < dex2pc);
+}
+
+#[test]
+fn readme_debian_scrcpy_download_url_is_the_official_5_0_1_static_build() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains(
+        "wget https://github.com/Genymobile/scrcpy/releases/download/v5.0.1/scrcpy-linux-x86_64-v5.0.1.tar.gz\n"
+    ));
+}
+
+#[test]
+fn readme_debian_scrcpy_extracts_into_a_per_version_directory_and_links_to_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    // 解壓到 /opt/scrcpy 底下以版本命名的目錄；升級時不會把新版塞進舊版目錄裡
+    assert!(install.contains("sudo tar xf scrcpy-linux-x86_64-v5.0.1.tar.gz -C /opt/scrcpy\n"));
+    assert!(install.contains(
+        "sudo ln -sf /opt/scrcpy/scrcpy-linux-x86_64-v5.0.1/scrcpy /usr/local/bin/scrcpy\n"
+    ));
+    assert!(!install.contains("mv scrcpy-linux-x86_64"));
+}
+
+#[test]
+fn readme_debian_scrcpy_placeholder_version_is_5_0_1() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("Package: scrcpy\\nVersion: 5.0.1\\n"));
+}
+
+#[test]
+fn readme_debian_scrcpy_placeholder_deb_file_name_is_5_0_1() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo apt install ./scrcpy_5.0.1_all.deb\n"));
+}
+
+#[test]
+fn readme_debian_scrcpy_upgrade_relinks_and_checks_version_before_rebuilding_placeholder() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("**更新 scrcpy**"));
+    assert!(install.contains("`ln -sf` 把連結改指向新版"));
+    assert!(install.contains("`scrcpy --version` 確認是新版後再重建佔位套件"));
+}
+
+#[test]
+fn readme_install_section_says_doctor_hints_are_fedora_only() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("`dex2pc doctor` 的安裝提示目前只列 Fedora 的 `dnf` 指令"));
+}
+
+#[test]
+fn readme_install_section_documents_building_the_deb_and_removing_it() {
+    let install = section(README, "\n## 安裝\n");
+
+    assert!(install.contains("sudo apt install cargo git gzip binutils dpkg"));
+    assert!(install.contains("packaging/build-deb.sh"));
+    assert!(install.contains("sudo apt remove dex2pc"));
+}
+
+#[test]
+fn changelog_0_3_0_announces_the_deb_package_in_plain_words() {
+    let release = section(CHANGELOG, "\n## [0.3.0] - 2026-10-11\n");
+
+    assert!(release.contains("deb 安裝包"));
+    assert!(release.contains("sudo apt remove dex2pc"));
+}
+
+#[test]
+fn readme_real_host_checklist_covers_each_package_on_each_distro_with_unchecked_items() {
+    let checklist = section(README, "\n## 實機驗收清單\n");
+
+    // 安裝包的實機項目要在三組主機上各做一次；沒做過就必須是未勾選，不能預先打勾
+    for host in ["Fedora（rpm）", "Debian 13（deb）", "Ubuntu 26.04（deb）"] {
+        assert!(checklist.contains(host), "實機驗收清單缺少 {host}");
+    }
+    for item in ["安裝", "選單捷徑", "點擊開出視窗", "移除"] {
+        assert!(
+            checklist.contains(&format!("- [ ] **{item}**")),
+            "實機驗收清單缺少未勾選的「{item}」"
+        );
+    }
+}
