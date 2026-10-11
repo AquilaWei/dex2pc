@@ -241,3 +241,5 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - GitHub 實際結果（對應上方清單 5、7）：push `master` 的 CI run 38110673295 六個 job 全綠，artifact `packages` 有上傳；tag 的 Release run 38111984715 全綠，Release v0.3.0 附 rpm、deb 與兩個 `.sha256`，notes 等於 CHANGELOG 0.3.0 段。
   - 未確認：清單 6（PATCH 版不建 Release）沒有實際推過 PATCH 版；清單 8 `../../releases` 連結沒點過；Release 檔案的 sha256 沒下載下來比對。
   - CI 警告：`actions/checkout@v4`、`upload-artifact@v4`、`download-artifact@v4` 用 Node 20（已被強制改跑 Node 24）；`ubuntu-latest` 2026-10-19 起改成 Ubuntu 26。
+
+- F6 完成（2026-10-11）：使用者確認「F6 完成了」。README 實機驗收清單的安裝包四項（安裝、選單捷徑、點擊開出視窗、移除；Fedora rpm、Debian 13 deb、Ubuntu 26.04 deb）與選單捷徑項目打勾，開頭的「捷徑尚未驗收」改為已驗收；`tests/docs.rs` 的清單測試改成要求已勾選；`feature_list.json` F6 `passes: true`。全部功能完成。

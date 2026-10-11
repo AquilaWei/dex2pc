@@ -112,7 +112,7 @@
         "README 或 progress.md 列出實機驗收項目：rpm 與 deb 各自的安裝、選單出現「Samsung DeX」、點擊開出 DeX 視窗、移除後捷徑消失",
         "此功能由使用者實機確認後才可標為完成，不假裝已測過"
       ],
-      "passes": false
+      "passes": true
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
