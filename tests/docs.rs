@@ -167,6 +167,25 @@ fn spec_build_requires_are_exactly_cargo_rust_and_desktop_file_utils() {
     assert_eq!(build_requires, ["cargo", "rust", "desktop-file-utils"]);
 }
 
+#[test]
+fn readme_rpm_build_command_covers_every_spec_buildrequires() {
+    // 上面的固定清單只是提醒；真正要擋的是 README 的指令涵蓋 spec 的每一個 BuildRequires
+    let spec = include_str!("../packaging/rpm/dex2pc.spec");
+    let line = install_line(README, "sudo dnf install rpm-build");
+    let installed: Vec<&str> = line.split_whitespace().collect();
+
+    for name in spec
+        .lines()
+        .filter_map(|line| line.strip_prefix("BuildRequires:"))
+        .filter_map(|rest| rest.split_whitespace().next())
+    {
+        assert!(
+            installed.contains(&name),
+            "spec 的 BuildRequires {name} 不在 README 的指令：{line}"
+        );
+    }
+}
+
 /// 回傳含 `prefix` 的那一行（README 裡只出現一次的指令）
 fn install_line<'a>(doc: &'a str, prefix: &str) -> &'a str {
     doc.lines()
