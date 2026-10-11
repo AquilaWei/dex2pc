@@ -71,7 +71,7 @@ fn deb_version_equals_cargo_toml_version_without_revision() {
         return;
     };
 
-    assert_eq!(version, "0.2.0\n");
+    assert_eq!(version, "0.3.0\n");
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn deb_is_named_after_version_and_amd64() {
 
     assert_eq!(
         deb.file_name().unwrap().to_str().unwrap(),
-        "dex2pc_0.2.0_amd64.deb"
+        "dex2pc_0.3.0_amd64.deb"
     );
 }
 

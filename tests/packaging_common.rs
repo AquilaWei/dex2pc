@@ -28,12 +28,12 @@ fn run_version_sh(script: &Path, dir: &Path) -> String {
 
 #[test]
 fn version_script_prints_cargo_toml_version_with_single_newline() {
-    assert_eq!(version_sh(Path::new(env!("CARGO_MANIFEST_DIR"))), "0.2.0\n");
+    assert_eq!(version_sh(Path::new(env!("CARGO_MANIFEST_DIR"))), "0.3.0\n");
 }
 
 #[test]
 fn version_script_gives_same_result_from_another_working_directory() {
-    assert_eq!(version_sh(Path::new("/")), "0.2.0\n");
+    assert_eq!(version_sh(Path::new("/")), "0.3.0\n");
 }
 
 /// 把 `cargo_toml` 放進暫存目錄裡的假專案，執行複製過去的 version.sh。

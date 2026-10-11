@@ -29,7 +29,7 @@ fn workflow(name: &str) -> String {
 
 #[test]
 fn check_tag_accepts_the_tag_that_matches_cargo_toml_minor_version() {
-    let output = check_tag("v0.2.0");
+    let output = check_tag("v0.3.0");
 
     assert!(output.status.success(), "{}", stderr(&output));
 }
@@ -44,10 +44,10 @@ fn check_tag_rejects_a_patch_version_tag() {
 
 #[test]
 fn check_tag_rejects_a_minor_tag_that_differs_from_cargo_toml() {
-    let output = check_tag("v0.3.0");
+    let output = check_tag("v0.4.0");
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("0.2.0"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("0.3.0"), "{}", stderr(&output));
 }
 
 #[test]

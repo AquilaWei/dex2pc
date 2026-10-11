@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-11
+
+提供 Fedora 的 rpm 與 Debian / Ubuntu 的 deb 安裝包，安裝包已由使用者測試確認沒有問題。
+
 ### 新增
 
 - **Fedora 的 rpm 安裝包**（x86_64）：`sudo dnf copr enable zeno/scrcpy` 後 `sudo dnf install ./dex2pc-*.rpm` 就能裝好，會自動帶入 adb 與 scrcpy，並附上應用程式選單的捷徑，不必再跑 `dex2pc install-desktop`；移除用 `sudo dnf remove dex2pc`。也可以用 `packaging/build-rpm.sh` 從原始碼自己建

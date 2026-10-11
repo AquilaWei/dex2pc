@@ -60,12 +60,12 @@ fn spec_version_equals_cargo_toml_version() {
     };
 
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "0.2.0\n");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "0.3.0\n");
 }
 
 #[test]
 fn spec_version_is_read_from_cargo_toml_of_the_project() {
-    // 把 spec 和 version.sh 放進另一個假專案，版號不會是 0.2.0；寫死在 spec 裡就會失敗
+    // 把 spec 和 version.sh 放進另一個假專案，版號不會是 0.3.0；寫死在 spec 裡就會失敗
     let project = tempfile::tempdir().unwrap();
     let common = project.path().join("packaging/common");
     let rpm_dir = project.path().join("packaging/rpm");
@@ -126,7 +126,7 @@ fn build_script_produces_rpm_named_after_cargo_toml_version() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     // 檔名中間的 dist 標籤（.fc44 等）依建置的主機而定，只檢查前後固定的部分
     let rpm = stdout.lines().last().unwrap();
-    assert!(rpm.starts_with("dist/dex2pc-0.2.0-1."), "{rpm}");
+    assert!(rpm.starts_with("dist/dex2pc-0.3.0-1."), "{rpm}");
     assert!(rpm.ends_with(".x86_64.rpm"), "{rpm}");
     assert!(Path::new(ROOT).join(rpm).is_file());
 
@@ -161,7 +161,7 @@ fn build_script_lists_only_the_rpm_it_just_built() {
         .filter(|line| Path::new(line).starts_with(dist.path()))
         .collect();
     assert_eq!(listed.len(), 1, "{stdout}");
-    assert!(listed[0].contains("/dex2pc-0.2.0-1."), "{stdout}");
+    assert!(listed[0].contains("/dex2pc-0.3.0-1."), "{stdout}");
 }
 
 #[test]

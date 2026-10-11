@@ -205,12 +205,12 @@ fn readme_install_section_says_patch_versions_are_artifacts_only() {
 }
 
 #[test]
-fn changelog_unreleased_announces_the_rpm_package_in_plain_words() {
-    let unreleased = section(CHANGELOG, "\n## [Unreleased]\n");
+fn changelog_0_3_0_announces_the_rpm_package_in_plain_words() {
+    let release = section(CHANGELOG, "\n## [0.3.0] - 2026-10-11\n");
 
-    assert!(unreleased.contains("### 新增"));
-    assert!(unreleased.contains("rpm 安裝包"));
-    assert!(unreleased.contains("sudo dnf remove dex2pc"));
+    assert!(release.contains("### 新增"));
+    assert!(release.contains("rpm 安裝包"));
+    assert!(release.contains("sudo dnf remove dex2pc"));
 }
 
 #[test]
@@ -303,11 +303,11 @@ fn readme_install_section_documents_building_the_deb_and_removing_it() {
 }
 
 #[test]
-fn changelog_unreleased_announces_the_deb_package_in_plain_words() {
-    let unreleased = section(CHANGELOG, "\n## [Unreleased]\n");
+fn changelog_0_3_0_announces_the_deb_package_in_plain_words() {
+    let release = section(CHANGELOG, "\n## [0.3.0] - 2026-10-11\n");
 
-    assert!(unreleased.contains("deb 安裝包"));
-    assert!(unreleased.contains("sudo apt remove dex2pc"));
+    assert!(release.contains("deb 安裝包"));
+    assert!(release.contains("sudo apt remove dex2pc"));
 }
 
 #[test]
