@@ -309,3 +309,19 @@ fn changelog_unreleased_announces_the_deb_package_in_plain_words() {
     assert!(unreleased.contains("deb 安裝包"));
     assert!(unreleased.contains("sudo apt remove dex2pc"));
 }
+
+#[test]
+fn readme_real_host_checklist_covers_each_package_on_each_distro_with_unchecked_items() {
+    let checklist = section(README, "\n## 實機驗收清單\n");
+
+    // 安裝包的實機項目要在三組主機上各做一次；沒做過就必須是未勾選，不能預先打勾
+    for host in ["Fedora（rpm）", "Debian 13（deb）", "Ubuntu 26.04（deb）"] {
+        assert!(checklist.contains(host), "實機驗收清單缺少 {host}");
+    }
+    for item in ["安裝", "選單捷徑", "點擊開出視窗", "移除"] {
+        assert!(
+            checklist.contains(&format!("- [ ] **{item}**")),
+            "實機驗收清單缺少未勾選的「{item}」"
+        );
+    }
+}
