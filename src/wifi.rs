@@ -63,6 +63,23 @@ pub enum Connection {
     Interrupted,
 }
 
+/// 啟動投影前清除失效的 TCP transport，避免 adb 誤報已連線而讓後續 shell 卡住。
+/// disconnect 失敗不影響後續連線；中斷則立即停止，輸出寫入失敗往上傳。
+pub fn fresh_connect(
+    runner: &dyn CommandRunner,
+    address: &str,
+    out: &mut dyn Write,
+) -> io::Result<Connection> {
+    validate(address).map_err(io::Error::other)?;
+    // 網路斷線後 adb 可能保留舊 TCP transport；必須先清除才能真正建立新連線。
+    if let Ok(output) = runner.run("adb", &["disconnect", address])
+        && output.code.is_none()
+    {
+        return Ok(Connection::Interrupted);
+    }
+    connect(runner, address, out)
+}
+
 /// adb 有時以 exit code 0 回報連線失敗，因此還要確認文字含 connected to。
 /// 命令錯誤寫入 out，只有輸出寫入失敗才回傳 I/O 錯誤。
 pub fn connect(
@@ -73,7 +90,12 @@ pub fn connect(
     validate(address).map_err(io::Error::other)?;
     match runner.run("adb", &["connect", address]) {
         Ok(output) => {
-            writeln!(out, "{}{}", output.stdout, output.stderr)?;
+            for message in [&output.stdout, &output.stderr] {
+                let message = message.trim();
+                if !message.is_empty() {
+                    writeln!(out, "{message}")?;
+                }
+            }
             if output.code.is_none() {
                 return Ok(Connection::Interrupted);
             }
@@ -587,5 +609,66 @@ mod tests {
             Connection::Interrupted
         );
         assert_eq!(*runner.calls.borrow(), ["adb connect phone:5555"]);
+    }
+    #[test]
+    fn fresh_connection_ignores_nonzero_disconnect_status() {
+        let runner = FakeRunner::new(&[
+            ("disconnect failed", Some(1)),
+            ("connected to phone:5555", Some(0)),
+        ]);
+        assert_eq!(
+            fresh_connect(&runner, "phone:5555", &mut Vec::new()).unwrap(),
+            Connection::Connected
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
+    fn fresh_connection_ignores_disconnect_io_error() {
+        struct DisconnectUnavailable;
+        impl CommandRunner for DisconnectUnavailable {
+            fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput> {
+                assert_eq!(program, "adb");
+                match args {
+                    ["disconnect", "phone:5555"] => Err(io::Error::other("無法執行 disconnect")),
+                    ["connect", "phone:5555"] => Ok(CommandOutput {
+                        code: Some(0),
+                        stdout: "connected to phone:5555".into(),
+                        stderr: String::new(),
+                    }),
+                    _ => panic!("非預期呼叫"),
+                }
+            }
+        }
+        assert_eq!(
+            fresh_connect(&DisconnectUnavailable, "phone:5555", &mut Vec::new()).unwrap(),
+            Connection::Connected
+        );
+    }
+    #[test]
+    fn connect_trims_stdout_and_stderr_without_extra_blank_lines() {
+        let runner = FakeRunner {
+            outputs: RefCell::new(VecDeque::from([CommandOutput {
+                code: Some(0),
+                stdout: "  connected to phone:5555\n\n".into(),
+                stderr: "  診斷訊息\n".into(),
+            }])),
+            calls: RefCell::default(),
+        };
+        let mut out = Vec::new();
+        connect(&runner, "phone:5555", &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "connected to phone:5555\n診斷訊息\n"
+        );
+    }
+    #[test]
+    fn connect_does_not_print_whitespace_only_output() {
+        let runner = FakeRunner::new(&[(" \n\t", None)]);
+        let mut out = Vec::new();
+        connect(&runner, "phone:5555", &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "");
     }
 }

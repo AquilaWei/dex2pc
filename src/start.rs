@@ -95,7 +95,7 @@ pub fn run(
     }
 }
 
-/// Wi-Fi 啟動先建立 adb 連線，再交給相同的 doctor 與 scrcpy 流程。
+/// Wi-Fi 啟動先清除舊 transport 並建立 adb 連線，再交給相同的 doctor 與 scrcpy 流程。
 /// 連線失敗時不做環境檢查；只有寫入輸出失敗才回傳 I/O 錯誤。
 pub fn run_wifi(
     runner: &dyn CommandRunner,
@@ -105,7 +105,7 @@ pub fn run_wifi(
     sysfs_root: &Path,
     out: &mut dyn Write,
 ) -> io::Result<u8> {
-    if crate::wifi::connect(runner, address, out)? != crate::wifi::Connection::Connected {
+    if crate::wifi::fresh_connect(runner, address, out)? != crate::wifi::Connection::Connected {
         return Ok(FAILURE);
     }
     run(runner, options, Some(address), watch, sysfs_root, out)
@@ -164,7 +164,7 @@ fn reconnect(
     out: &mut dyn Write,
 ) -> io::Result<Outcome> {
     if crate::wifi::validate(serial).is_ok() {
-        match crate::wifi::connect(runner, serial, out)? {
+        match crate::wifi::fresh_connect(runner, serial, out)? {
             crate::wifi::Connection::Connected => {}
             crate::wifi::Connection::Interrupted => return Ok(Outcome::Interrupted),
             crate::wifi::Connection::Failed => return Ok(Outcome::Failed(FAILURE)),
@@ -796,8 +796,26 @@ mod wifi_tests {
         }
     }
     #[test]
+    fn wifi_start_discards_stale_transport_before_connecting() {
+        let runner = FakeRunner::new(&[("cannot connect", Some(0)), ("cannot connect", Some(0))]);
+        run_wifi(
+            &runner,
+            &Options::default(),
+            "phone:5555",
+            None,
+            Path::new("/unused"),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
     fn wifi_start_connects_before_doctor_and_launches_with_network_serial() {
         let runner = FakeRunner::new(&[
+            ("", Some(0)),
             ("connected to phone:5555", Some(0)),
             ("Android Debug Bridge version 1.0.41", Some(0)),
             ("scrcpy 3.3.1", Some(0)),
@@ -824,6 +842,7 @@ mod wifi_tests {
         assert_eq!(
             *runner.calls.borrow(),
             [
+                "adb disconnect phone:5555",
                 "adb connect phone:5555",
                 "adb version",
                 "scrcpy --version",
@@ -835,7 +854,7 @@ mod wifi_tests {
     }
     #[test]
     fn wifi_start_connect_failure_stops_before_doctor() {
-        let runner = FakeRunner::new(&[("cannot connect", Some(0))]);
+        let runner = FakeRunner::new(&[("", Some(0)), ("cannot connect", Some(0))]);
         assert_eq!(
             run_wifi(
                 &runner,
@@ -848,11 +867,18 @@ mod wifi_tests {
             .unwrap(),
             1
         );
-        assert_eq!(*runner.calls.borrow(), ["adb connect phone:5555"]);
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
     }
     #[test]
     fn wifi_watch_reconnects_with_connect_instead_of_wait_for_device() {
-        let runner = FakeRunner::new(&[("connected to phone:5555", Some(0)), ("", Some(0))]);
+        let runner = FakeRunner::new(&[
+            ("", Some(0)),
+            ("connected to phone:5555", Some(0)),
+            ("", Some(0)),
+        ]);
         let watch = Watch {
             max_failures: 5,
             retry_delay: Duration::from_secs(2),
@@ -873,17 +899,26 @@ mod wifi_tests {
         );
         assert_eq!(
             *runner.calls.borrow(),
-            ["adb connect phone:5555", "scrcpy --serial=phone:5555"]
+            [
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "scrcpy --serial=phone:5555"
+            ]
         );
         assert_eq!(delays, [Duration::from_secs(2)]);
     }
     #[test]
     fn wifi_watch_stops_after_five_failed_connections() {
         let runner = FakeRunner::new(&[
+            ("", Some(0)),
             ("cannot connect", Some(0)),
+            ("", Some(0)),
             ("cannot connect", Some(0)),
+            ("", Some(0)),
             ("cannot connect", Some(0)),
+            ("", Some(0)),
             ("cannot connect", Some(0)),
+            ("", Some(0)),
             ("cannot connect", Some(0)),
         ]);
         let mut delays = Vec::new();
@@ -904,10 +939,15 @@ mod wifi_tests {
         assert_eq!(
             *runner.calls.borrow(),
             [
+                "adb disconnect phone:5555",
                 "adb connect phone:5555",
+                "adb disconnect phone:5555",
                 "adb connect phone:5555",
+                "adb disconnect phone:5555",
                 "adb connect phone:5555",
+                "adb disconnect phone:5555",
                 "adb connect phone:5555",
+                "adb disconnect phone:5555",
                 "adb connect phone:5555"
             ]
         );
@@ -928,6 +968,44 @@ mod wifi_tests {
     }
     #[test]
     fn wifi_watch_interrupted_connect_stops_without_retry() {
+        let runner = FakeRunner::new(&[("", Some(0)), ("", None)]);
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch::default(),
+                Outcome::Disconnected,
+                &mut |_| panic!("不應等待"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
+    fn wifi_start_interrupted_disconnect_stops_before_connect_and_doctor() {
+        let runner = FakeRunner::new(&[("", None)]);
+        assert_eq!(
+            run_wifi(
+                &runner,
+                &Options::default(),
+                "phone:5555",
+                None,
+                Path::new("/unused"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(*runner.calls.borrow(), ["adb disconnect phone:5555"]);
+    }
+    #[test]
+    fn wifi_watch_interrupted_disconnect_stops_without_retry() {
         let runner = FakeRunner::new(&[("", None)]);
         assert_eq!(
             keep_reconnecting(
@@ -942,6 +1020,6 @@ mod wifi_tests {
             .unwrap(),
             1
         );
-        assert_eq!(*runner.calls.borrow(), ["adb connect phone:5555"]);
+        assert_eq!(*runner.calls.borrow(), ["adb disconnect phone:5555"]);
     }
 }
