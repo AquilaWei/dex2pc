@@ -380,10 +380,7 @@ fn install_desktop_writes_entry_execing_this_binary_start() {
 
     assert!(output.status.success());
     let entry = std::fs::read_to_string(dir.path().join("applications/dex2pc.desktop")).unwrap();
-    assert!(entry.contains(&format!(
-        "Exec=\"{}\" start\n",
-        env!("CARGO_BIN_EXE_dex2pc")
-    )));
+    assert!(entry.contains(&format!("Exec=\"{}\" gui\n", env!("CARGO_BIN_EXE_dex2pc"))));
 }
 
 #[test]
@@ -527,5 +524,21 @@ fn config_without_wifi_address_shows_unset() {
         String::from_utf8(output.stdout)
             .unwrap()
             .contains("wifi_address = （未設定）")
+    );
+}
+
+#[test]
+fn gui_help_does_not_need_a_display_server() {
+    let output = dex2pc()
+        .args(["gui", "--help"])
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("dex2pc gui")
     );
 }

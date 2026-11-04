@@ -3,6 +3,8 @@ mod config;
 mod desktop;
 mod device;
 mod doctor;
+mod gui;
+mod preferences;
 mod runner;
 mod scrcpy;
 mod start;
@@ -29,6 +31,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// 圖形設定精靈與工具列
+    Gui,
     /// 使用手機「無線偵錯」顯示的配對位址，配對碼由 adb 詢問
     Pair {
         #[arg(value_parser = wifi::validate)]
@@ -75,7 +79,7 @@ enum Command {
         #[command(flatten)]
         overrides: config::Overrides,
     },
-    /// 建立應用程式選單捷徑 dex2pc.desktop（放在 XDG_DATA_HOME 下的 applications，未設定時用 ~/.local/share/applications），點它等同執行 dex2pc start
+    /// 建立應用程式選單捷徑 dex2pc.desktop（放在 XDG_DATA_HOME 下的 applications，未設定時用 ~/.local/share/applications），點它開啟 dex2pc gui
     InstallDesktop {
         /// 刪除已建立的捷徑
         #[arg(long)]
@@ -86,6 +90,13 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
+        Command::Gui => match gui::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
         Command::Pair { address } => match wifi::pair(&SystemRunner, &address, &mut io::stderr()) {
             Ok(code) => ExitCode::from(code),
             Err(err) => {
@@ -206,6 +217,16 @@ fn show_config(
     println!(
         "wifi_address = {}",
         options.wifi_address.as_deref().unwrap_or("（未設定）")
+    );
+    println!(
+        "mode = {}",
+        options.mode.map_or("（未設定）".into(), |m| m.to_string())
+    );
+    println!(
+        "quality = {}",
+        options
+            .quality
+            .map_or("（未設定）".into(), |q| q.to_string())
     );
     Ok(())
 }

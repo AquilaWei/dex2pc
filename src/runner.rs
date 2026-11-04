@@ -68,6 +68,7 @@ pub trait CommandRunner {
 }
 
 /// 真正啟動子行程的實作。
+#[derive(Clone, Copy)]
 pub struct SystemRunner;
 
 impl CommandRunner for SystemRunner {
