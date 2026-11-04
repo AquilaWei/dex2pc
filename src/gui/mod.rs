@@ -51,7 +51,7 @@ enum Action {
 }
 enum Event {
     Action(Action),
-    Command(Sender<()>, bool),
+    Command(worker::StopHandle, bool),
     Log(String),
     Finished(Status, Option<String>),
     Checked(Result<String, String>),
@@ -140,7 +140,7 @@ struct App {
     model: Model,
     events: Receiver<Event>,
     tx: Sender<Event>,
-    command: Option<Sender<()>>,
+    command: Vec<worker::StopHandle>,
     tray: Option<ksni::blocking::Handle<tray::Tray>>,
     _instance: ipc::Instance,
     address: String,
@@ -172,7 +172,7 @@ impl App {
                 worker::session(self.tx.clone(), self.model.options.clone());
             }
             Action::Stop | Action::Quit => {
-                if let Some(tx) = &self.command {
+                for tx in &self.command {
                     let _ = tx.send(());
                 }
             }
@@ -210,7 +210,8 @@ impl App {
                     if self.model.session.stopping {
                         let _ = tx.send(());
                     }
-                    self.command = Some(tx);
+                    self.command.retain(|handle| !handle.finished());
+                    self.command.push(tx);
                     if projection {
                         self.model.status = Status::Projecting;
                     }
@@ -232,7 +233,7 @@ impl App {
                         status
                     };
                     self.model.error = error;
-                    self.command = None;
+                    self.command.clear();
                 }
                 Event::Checked(result) => {
                     self.busy = false;
@@ -241,11 +242,11 @@ impl App {
                     }
                     self.checked = result.is_ok();
                     self.model.error = result.err();
-                    self.command = None;
+                    self.command.clear();
                 }
                 Event::Switched(result) => {
                     self.busy = false;
-                    self.command = None;
+                    self.command.clear();
                     match result {
                         Ok(address) => {
                             self.address.clone_from(&address);
@@ -261,7 +262,7 @@ impl App {
                 }
                 Event::Paired(result) => {
                     self.busy = false;
-                    self.command = None;
+                    self.command.clear();
                     self.model.error = result.err();
                 }
                 Event::Environment(commands) => {
@@ -439,7 +440,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         model,
         events,
         tx,
-        command: None,
+        command: Vec::new(),
         tray,
         _instance: instance,
         address,
@@ -635,5 +636,91 @@ mod tests {
     #[test]
     fn high_quality_maps_to_sixteen_megabit() {
         assert_eq!(Quality::High.bitrate(), "16M");
+    }
+    #[derive(Clone)]
+    struct KillRunner(Sender<&'static str>);
+    struct WaitingChild(Sender<&'static str>, &'static str);
+    impl crate::runner::RunningCommand for WaitingChild {
+        fn try_wait(&mut self) -> io::Result<Option<crate::runner::CommandOutput>> {
+            Ok(None)
+        }
+        fn kill(&mut self) -> io::Result<()> {
+            let _ = self.0.send(self.1);
+            Ok(())
+        }
+    }
+    impl CommandRunner for KillRunner {
+        fn run(&self, _: &str, _: &[&str]) -> io::Result<crate::runner::CommandOutput> {
+            unreachable!()
+        }
+        fn spawn(
+            &self,
+            program: &str,
+            _: &[&str],
+        ) -> io::Result<Box<dyn crate::runner::RunningCommand>> {
+            Ok(Box::new(WaitingChild(
+                self.0.clone(),
+                if program == "scrcpy" { "scrcpy" } else { "adb" },
+            )))
+        }
+    }
+    fn headless_app() -> (App, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, events) = mpsc::channel();
+        let instance = ipc::acquire(dir.path(), tx.clone()).unwrap().unwrap();
+        (
+            App {
+                model: Model::new(dir.path().join("config.toml"), Ok(None)),
+                events,
+                tx,
+                command: Vec::new(),
+                tray: None,
+                _instance: instance,
+                address: String::new(),
+                pair_address: String::new(),
+                code: String::new(),
+                busy: false,
+                checked: false,
+                next_check: Instant::now(),
+                install: Vec::new(),
+                environment_done: false,
+                load_error: None,
+            },
+            dir,
+        )
+    }
+    #[test]
+    fn stop_kills_scrcpy_even_when_probe_is_latest_command() {
+        let (mut app, _dir) = headless_app();
+        let (killed, rx) = mpsc::channel();
+        let runner = worker::SessionRunner::with_backend(app.tx.clone(), KillRunner(killed));
+        let _scrcpy = runner.spawn("scrcpy", &["--new-display"]).unwrap();
+        let _probe = runner
+            .spawn("adb", &["-s", "phone:5555", "shell", "true"])
+            .unwrap();
+        app.pump(&egui::Context::default());
+        app.action(Action::Stop);
+        let mut killed = [
+            rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+            rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+        ];
+        killed.sort_unstable();
+        assert_eq!(killed, ["adb", "scrcpy"]);
+    }
+    #[test]
+    fn stop_during_wait_for_device_finishes_idle() {
+        let (mut app, _dir) = headless_app();
+        let (killed, _rx) = mpsc::channel();
+        let runner = worker::SessionRunner::with_backend(app.tx.clone(), KillRunner(killed));
+        let mut wait = runner
+            .spawn("adb", &["-s", "phone", "wait-for-device"])
+            .unwrap();
+        app.model.session.running = true;
+        app.pump(&egui::Context::default());
+        app.action(Action::Stop);
+        assert_eq!(wait.try_wait().unwrap().unwrap().code, None);
+        app.tx.send(Event::Finished(Status::Error, None)).unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(app.model.status, Status::Idle);
     }
 }
