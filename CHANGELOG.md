@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 修正
+
+- `dex2pc connect` 從 USB 切換時，先讀 Wi-Fi IP 再切換傳輸模式，避免手機重啟 adb 時出現 `error: closed`；切換後若連線尚未就緒，最多嘗試三次、間隔一秒。讀不到 IP 時不切換，指定 IP 連線與 `start --wifi` 行為不變。
+- 無線配對失敗後顯示排除提示：重新開啟配對視窗並使用新的碼與埠、執行 `adb kill-server`、改用 Google 官方 platform-tools，或接 USB 執行 `dex2pc connect` 跳過配對。README 改為優先建議 USB 切換。
+
 ## [0.3.1] - 2026-11-03
 
 ### 新增

@@ -343,3 +343,16 @@ fn readme_keeps_wireless_hardware_acceptance_unchecked() {
     assert!(checklist.contains("- [ ] 拔除 USB 後"));
     assert!(checklist.contains("- [ ] Wi-Fi 斷線後"));
 }
+
+#[test]
+fn readme_recommends_usb_switch_before_wireless_pairing_and_explains_pair_failures() {
+    let wireless = section(README, "\n## 無線投影\n");
+    assert!(
+        wireless.find("dex2pc connect\n").unwrap()
+            < wireless.find("dex2pc pair 192.168.1.20:37001").unwrap()
+    );
+    assert!(wireless.contains("新的配對碼與埠號"));
+    assert!(wireless.contains("adb kill-server"));
+    assert!(wireless.contains("protocol fault (couldn't read status message)"));
+    assert!(wireless.contains("Google 官方 platform-tools"));
+}
