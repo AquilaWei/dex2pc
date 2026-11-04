@@ -28,11 +28,10 @@ pub fn applications_dir(
     Ok(base.join("applications"))
 }
 
-/// 產生 `.desktop` 檔內容，`Exec` 是 `<exe> start`。
+/// 產生 `.desktop` 檔內容，`Exec` 是 `<exe> gui`。
 ///
 /// 用 dex2pc 執行檔的絕對路徑而不是指令名稱，因為從桌面環境啟動時的 PATH
-/// 常常不含 `~/.cargo/bin`。不加 `--watch`：捷徑沒有終端機，`wait-for-device`
-/// 等不到手機時會在背景一直等，使用者看不到也關不掉。
+/// 常常不含 `~/.cargo/bin`。GUI 提供可停止的 watch 工作階段，沒有終端機也能管理連線。
 ///
 /// # Errors
 /// 路徑不是 UTF-8 時回傳 `DesktopError::NonUtf8Path`（`.desktop` 檔規定是 UTF-8）；
@@ -53,7 +52,7 @@ pub fn entry(exe: &Path) -> Result<String, DesktopError> {
          Type=Application\n\
          Name=Samsung DeX\n\
          Comment=用 USB-C 線把 Samsung DeX 開成電腦上的視窗（dex2pc）\n\
-         Exec={} start\n\
+         Exec={} gui\n\
          Icon=video-display\n\
          Terminal=false\n\
          Categories=Utility;\n",
@@ -185,14 +184,14 @@ mod tests {
     }
 
     #[test]
-    fn entry_execs_dex2pc_start_by_absolute_path() {
+    fn entry_execs_dex2pc_gui_by_absolute_path() {
         assert_eq!(
             entry(Path::new("/home/u/.cargo/bin/dex2pc")).unwrap(),
             "[Desktop Entry]\n\
              Type=Application\n\
              Name=Samsung DeX\n\
              Comment=用 USB-C 線把 Samsung DeX 開成電腦上的視窗（dex2pc）\n\
-             Exec=\"/home/u/.cargo/bin/dex2pc\" start\n\
+             Exec=\"/home/u/.cargo/bin/dex2pc\" gui\n\
              Icon=video-display\n\
              Terminal=false\n\
              Categories=Utility;\n"
@@ -204,7 +203,7 @@ mod tests {
         assert!(
             entry(Path::new("/opt/my tools/dex2pc"))
                 .unwrap()
-                .contains("Exec=\"/opt/my tools/dex2pc\" start\n")
+                .contains("Exec=\"/opt/my tools/dex2pc\" gui\n")
         );
     }
 
@@ -213,7 +212,7 @@ mod tests {
         assert!(
             entry(Path::new("/opt/a\"b`c$d%e\\f/dex2pc"))
                 .unwrap()
-                .contains(r#"Exec="/opt/a\\"b\\`c\\$d%%e\\\\f/dex2pc" start"#)
+                .contains(r#"Exec="/opt/a\\"b\\`c\\$d%%e\\\\f/dex2pc" gui"#)
         );
     }
 
@@ -222,7 +221,7 @@ mod tests {
         assert!(
             entry(Path::new("/opt/a\nb\tc\rd/dex2pc"))
                 .unwrap()
-                .contains(r#"Exec="/opt/a\nb\tc\rd/dex2pc" start"#)
+                .contains(r#"Exec="/opt/a\nb\tc\rd/dex2pc" gui"#)
         );
     }
 
@@ -265,7 +264,7 @@ mod tests {
         assert!(
             fs::read_to_string(tmp.path().join("dex2pc.desktop"))
                 .unwrap()
-                .contains("Exec=\"/new/dex2pc\" start\n")
+                .contains("Exec=\"/new/dex2pc\" gui\n")
         );
     }
 

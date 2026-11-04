@@ -18,15 +18,24 @@ License:        Apache-2.0
 ExclusiveArch:  x86_64
 Source0:        %{name}-%{version}.tar.gz
 
-# edition 2024 需要 Rust 1.85 以上
-BuildRequires:  cargo >= 1.85
-BuildRequires:  rust >= 1.85
+# eframe 0.33 需要 Rust 1.88 以上
+BuildRequires:  cargo >= 1.88
+BuildRequires:  rust >= 1.88
 BuildRequires:  desktop-file-utils
 
 # dex2pc 啟動時呼叫 adb 與 scrcpy。scrcpy 不在 Fedora 官方庫，要先啟用 COPR zeno/scrcpy；
 # 3.2 是程式內檢查的最低版本（src/doctor.rs 的 MIN_SCRCPY），兩邊要一起改
 Requires:       android-tools
 Requires:       scrcpy >= 3.2
+Requires:       libX11
+Requires:       libXcursor
+Requires:       libXi
+Requires:       libXrandr
+Requires:       libxkbcommon
+Requires:       wayland-libs
+Requires:       mesa-libEGL
+Requires:       mesa-libGL
+Requires:       google-noto-sans-cjk-fonts
 
 %description
 dex2pc shows Samsung DeX as a window on a Linux PC over a USB-C cable,
@@ -45,6 +54,9 @@ cargo build --release --locked --target-dir target
 install -D -s -m 0755 target/release/dex2pc %{buildroot}%{_bindir}/dex2pc
 install -D -m 0644 packaging/common/dex2pc.desktop %{buildroot}%{_datadir}/applications/dex2pc.desktop
 
+install -d %{buildroot}%{_datadir}/icons/hicolor/scalable/status
+install -m 0644 assets/dex2pc-*.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/status/
+
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/dex2pc.desktop
 
@@ -53,6 +65,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/dex2pc.desktop
 %doc README.md
 %{_bindir}/dex2pc
 %{_datadir}/applications/dex2pc.desktop
+%{_datadir}/icons/hicolor/scalable/status/dex2pc-*.svg
 
 %changelog
 * Sat Oct 10 2026 AquilaWei <weichuangtaiwan@gmail.com> - %{version}-1%{?dist}

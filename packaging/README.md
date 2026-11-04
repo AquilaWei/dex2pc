@@ -5,7 +5,7 @@ rpm（Fedora）與 deb（Debian / Ubuntu）共用同一套結構，版號只寫�
 | 路徑 | 內容 |
 |------|------|
 | `common/version.sh` | 印出 `Cargo.toml` 的版號，兩種格式的建置腳本都從這裡讀 |
-| `common/dex2pc.desktop` | 應用程式選單捷徑（`Exec=dex2pc start`），兩種格式共用 |
+| `common/dex2pc.desktop` | 應用程式選單捷徑（`Exec=dex2pc gui`），兩種格式共用 |
 | `rpm/` | `dex2pc.spec`、`dex2pc.rpmlintrc`；用 `build-rpm.sh` 建置 |
 | `deb/` | `copyright`；用 `build-deb.sh` 建置 |
 | `smoke-test.sh` | 在 Fedora 容器內安裝 rpm 並啟動驗證 |

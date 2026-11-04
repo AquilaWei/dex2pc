@@ -156,8 +156,8 @@ fn git_status_stays_clean_after_dist_output_is_created() {
 }
 
 #[test]
-fn desktop_file_execs_plain_dex2pc_start_without_watch() {
-    assert!(DESKTOP.lines().any(|line| line == "Exec=dex2pc start"));
+fn desktop_file_execs_plain_dex2pc_gui() {
+    assert!(DESKTOP.lines().any(|line| line == "Exec=dex2pc gui"));
 }
 
 #[test]

@@ -176,14 +176,14 @@ fn extract_rpm_fails_when_rpm2cpio_fails_even_if_cpio_succeeds() {
 }
 
 #[test]
-fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
+fn packaged_desktop_file_runs_dex2pc_gui_and_validates() {
     let Some(extract) = extract_built_rpm() else {
         return;
     };
     let desktop = extract.path().join("usr/share/applications/dex2pc.desktop");
 
     let content = std::fs::read_to_string(&desktop).unwrap();
-    assert!(content.lines().any(|line| line == "Exec=dex2pc start"));
+    assert!(content.lines().any(|line| line == "Exec=dex2pc gui"));
     let validate = run("desktop-file-validate", &[desktop.to_str().unwrap()]);
     assert!(validate.status.success(), "{validate:?}");
 }
