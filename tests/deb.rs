@@ -385,7 +385,12 @@ fn deb_depends_cover_every_shared_library_the_binary_needs() {
         .collect();
     assert_eq!(
         needed,
-        ["libgcc_s.so.1", "libc.so.6", "ld-linux-x86-64.so.2"]
+        [
+            "libgcc_s.so.1",
+            "libm.so.6",
+            "libc.so.6",
+            "ld-linux-x86-64.so.2"
+        ]
     );
 
     let depends = field("Depends").unwrap();
