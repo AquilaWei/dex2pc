@@ -393,7 +393,7 @@ fn install_hints(runner: &dyn CommandRunner, os: &str) -> Vec<String> {
             if fedora {
                 crate::doctor::SCRCPY_INSTALL_HINT
             } else {
-                "sudo apt install scrcpy（需 3.2 以上；Debian 請依 README 安裝官方版）"
+                "sudo apt install scrcpy"
             }
             .into(),
         );

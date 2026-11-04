@@ -30,7 +30,8 @@ Requires:       scrcpy >= 3.2
 Requires:       libX11
 Requires:       libXcursor
 Requires:       libXi
-Requires:       libXrandr
+Requires:       libX11-xcb
+Requires:       libXrender
 Requires:       libxkbcommon
 Requires:       wayland-libs
 Requires:       mesa-libEGL

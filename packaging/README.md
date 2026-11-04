@@ -77,3 +77,19 @@ packaging/smoke-test-deb.sh ubuntu:26.04
 packaging/build-rpm.sh   # 需要 rpmbuild、cargo、git、tar、desktop-file-utils
 packaging/build-deb.sh   # 需要 dpkg-deb、cargo、git、gzip、strip（binutils）
 ```
+
+## GUI 執行期函式庫的判定
+
+GUI 選用 eframe 0.33.3 的 glow（OpenGL）、winit 0.30.13 的 X11／Wayland，未啟用 wgpu，因此不要求 Vulkan loader。不能只看 `readelf -d`：多數顯示函式庫是執行期 dlopen。以下依 Cargo.lock 鎖定版本原始碼的載入點判定，兩種套件均宣告強制相依，支援兩種桌面環境。
+
+| 載入來源 | 函式庫 | deb | rpm |
+|---|---|---|---|
+| winit `linux/x11/xdisplay.rs` 的 Xlib、Xlib_xcb、Xcursor、XInput2::open | libX11、libX11-xcb、libXcursor、libXi | libx11-6、libx11-xcb1、libxcursor1、libxi6 | libX11、libX11-xcb、libXcursor、libXi |
+| glutin 0.32.3 `platform/x11.rs` 的 Xrender::open | libXrender | libxrender1 | libXrender |
+| xkbcommon-dl 0.4.2 `src/lib.rs` | libxkbcommon.so.0 | libxkbcommon0 | libxkbcommon |
+| wayland-sys 0.31.11 `client.rs`、`egl.rs`；glutin 的 EGL surface | libwayland-client.so.0、libwayland-egl.so.1 | libwayland-client0、libwayland-egl1 | wayland-libs |
+| glutin `api/egl/mod.rs`、`api/glx/mod.rs` | libEGL.so.1、libGL.so.1 | libegl1、libgl1 | mesa-libEGL、mesa-libGL |
+
+winit 的 RandR 使用純 Rust x11rb 協定，不另要求 libXrandr；也沒有使用 xkbcommon-dl 的 X11 擴充載入器。字型另由 fonts-noto-cjk／google-noto-sans-cjk-fonts 提供。直接連結的 libm.so.6 和 loader 由既有 libc6／rpm 自動產生的 glibc 相依提供。
+
+ksni 0.3.7 使用純 Rust zbus 傳輸 D-Bus 訊息，不連結 libdbus 或 GTK，無須新增對應函式庫套件；執行桌面需有 session bus，沒有 StatusNotifier host 時退回視窗模式。

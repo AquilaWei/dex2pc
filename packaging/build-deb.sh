@@ -64,7 +64,7 @@ Version: $version
 Architecture: amd64
 Maintainer: $maintainer
 Installed-Size: $installed_size
-Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= $min_scrcpy), libegl1, libgl1, libx11-6, libxcursor1, libxi6, libxrandr2, libxkbcommon0, libwayland-client0, fonts-noto-cjk
+Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= $min_scrcpy), libegl1, libgl1, libx11-6, libxcursor1, libxi6, libx11-xcb1, libxrender1, libxkbcommon0, libwayland-client0, libwayland-egl1, fonts-noto-cjk
 Section: utils
 Priority: optional
 Description: Show Samsung DeX as a window on a Linux PC over USB-C
