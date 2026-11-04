@@ -1,6 +1,6 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.3.2-blue)
+![version](https://img.shields.io/badge/version-0.3.3-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
@@ -146,12 +146,11 @@ dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX�
 
 `~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。adb 與 scrcpy 要自己裝，見上面的「需求」。
 
-**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
+**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它開啟 `dex2pc gui`。
 
 - 捷徑記錄的是**執行指令當下的 dex2pc 絕對路徑**，所以請在 `cargo install` 之後用 `dex2pc install-desktop` 建立，不要用 `cargo run`（會指向 `target/` 裡的檔案）
 - 重複執行只會覆寫同一個檔案；移除用 **`dex2pc install-desktop --uninstall`**
-- 捷徑沒有終端機，**看不到錯誤訊息**；點了沒反應時，在終端機跑 `dex2pc doctor` 看原因
-- 捷徑不加 `--watch`：沒有終端機時，手機一直沒接回來會在背景一直等，使用者看不到也關不掉
+- 捷徑開啟圖形設定與工具列，可查看錯誤、開啟或停止投影；CLI 仍可獨立使用
 
 ## 快速開始
 
@@ -191,6 +190,38 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 
 > ⚠️ 其他機型若開出的視窗是空白或只有一般手機畫面、不是 DeX，
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
+
+## 圖形介面與工具列
+
+安裝 rpm／deb 後，從選單點「Samsung DeX」，或執行：
+
+```bash
+dex2pc gui
+```
+
+首次開啟會顯示設定精靈：檢查 adb／scrcpy（缺少時可複製安裝指令），選 USB 或 Wi-Fi，設定畫質並儲存。USB 模式每兩秒偵測手機；看到未授權提示時，請在手機按「允許 USB 偵錯」。Wi-Fi 建議先接 USB 按「切換到 Wi-Fi」，進階選項也可輸入連線 IP:埠，或配對 IP:埠與六位配對碼；配對埠與連線埠通常不同。配對碼不寫入設定或日誌。
+
+「開啟 DeX」一律使用 watch 模式，畫面顯示連線狀態與訊息；「停止」會終止 scrcpy。工具列選單可開啟／停止、切換 USB／Wi-Fi、選畫質、從 USB 切換 Wi-Fi、開啟設定視窗及結束。選單變更立即儲存，下一次啟動投影生效。
+
+設定沿用 `config.toml`，新增 `mode = "usb"` 或 `"wifi"`，以及 `quality = "high"`（16M）、`"balanced"`（8M，預設）、`"low"`（4M）。這兩個欄位只控制 GUI；CLI 仍沿用自己的參數與 `video_bit_rate`。格式錯誤會顯示設定路徑與欄位，修正後重新開啟。
+
+設定完成後，啟動只顯示工具列；關閉設定視窗仍常駐，請從選單按「結束」。再次啟動只會顯示既有視窗；單一實例透過 `$XDG_RUNTIME_DIR/dex2pc/gui.sock` 溝通，未設定 runtime 目錄時使用設定目錄下的 runtime 子目錄。沒有 StatusNotifier 工具列支援時會退回純視窗，關窗即停止並退出。
+
+**GNOME** 需要 AppIndicator 擴充套件。Fedora：
+
+```bash
+sudo dnf install gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+
+Ubuntu／Debian GNOME：
+
+```bash
+sudo apt install gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+
+安裝並啟用後請**登出再登入**。KDE Plasma 通常已支援 StatusNotifierItem。圖示為專案原創，沒有 Samsung 商標。套件會安裝 OpenGL、X11／Wayland 與中文字型依賴；自行編譯需 Rust 1.88 以上，`cargo install` 使用者亦需安裝這些執行期套件及 Noto CJK 字型。
 
 ## 無線投影
 
@@ -339,3 +370,16 @@ cargo run --example sync_version_badge
 **不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器（dex2pc 另外用到 3.2 起才有的 `--display-ime-policy`，所以要求 3.2 以上），One UI 8 起 DeX 會直接跑在上面（已在實機確認，見上方「手機端需要另外設定嗎？」）。
 
 dex2pc **不重寫**這些部分，只負責檢查環境、組好 scrcpy 參數、一鍵啟動。
+
+### GUI／工具列實機驗收（0.3.3）
+
+- [ ] GUI USB：未授權提示、自動重試、授權後開啟 DeX 與鍵鼠操作
+- [ ] GUI Wi-Fi：USB 切換、手動位址、配對碼，無線開啟 DeX
+- [ ] 停止可關閉 scrcpy；結束可停止並退出
+- [ ] 重開程式記住連線方式、畫質、Wi-Fi 位址
+- [ ] 工具列：開啟／停止、USB／Wi-Fi、各畫質、切換到 Wi-Fi、設定視窗、結束
+- [ ] 四種圖示與 tooltip：未連線、連線中、投影中、錯誤
+- [ ] 設定完成只顯示工具列，關閉視窗後仍常駐
+- [ ] 第二次啟動只顯示既有視窗；舊 socket 可恢復
+- [ ] 無工具列 host 時退回純視窗，關閉視窗會停止並退出
+- [ ] 補測 0.3.2：Wi-Fi 開關後約 15–20 秒內關閉凍結視窗，watch 自動重連；Ctrl+C／GUI 停止可中止

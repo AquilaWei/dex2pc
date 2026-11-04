@@ -71,7 +71,7 @@ fn deb_version_equals_cargo_toml_version_without_revision() {
         return;
     };
 
-    assert_eq!(version, "0.3.2\n");
+    assert_eq!(version, "0.3.3\n");
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn deb_is_named_after_version_and_amd64() {
 
     assert_eq!(
         deb.file_name().unwrap().to_str().unwrap(),
-        "dex2pc_0.3.2_amd64.deb"
+        "dex2pc_0.3.3_amd64.deb"
     );
 }
 
@@ -385,7 +385,12 @@ fn deb_depends_cover_every_shared_library_the_binary_needs() {
         .collect();
     assert_eq!(
         needed,
-        ["libgcc_s.so.1", "libc.so.6", "ld-linux-x86-64.so.2"]
+        [
+            "libgcc_s.so.1",
+            "libm.so.6",
+            "libc.so.6",
+            "ld-linux-x86-64.so.2"
+        ]
     );
 
     let depends = field("Depends").unwrap();

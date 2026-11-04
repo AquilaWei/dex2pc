@@ -125,6 +125,19 @@
         "fmt、clippy、cargo test --locked 通過；以上四項需實機驗收"
       ],
       "passes": false
+    },
+    {
+      "id": "F13",
+      "description": "圖形設定精靈與 StatusNotifier 工具列",
+      "steps": [
+        "dex2pc gui：環境檢查、USB 授權自動重試、Wi-Fi USB 切換與配對",
+        "儲存 mode、quality、wifi_address；工具列選單立即儲存",
+        "watch 投影可停止；四種圖示與狀態",
+        "關窗常駐、單一實例、無工具列時退回視窗",
+        "rpm/deb 安裝原創圖示與執行期依賴，gui --help smoke test",
+        "GUI USB/Wi-Fi、工具列各項、生命週期與0.3.2斷線重連由使用者實機驗收"
+      ],
+      "passes": false
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",

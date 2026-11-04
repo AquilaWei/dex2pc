@@ -38,6 +38,8 @@ fi
 
 install -D -s -m 0755 target/release/dex2pc "$pkg/usr/bin/dex2pc"
 install -D -m 0644 packaging/common/dex2pc.desktop "$pkg/usr/share/applications/dex2pc.desktop"
+install -d "$pkg/usr/share/icons/hicolor/scalable/status"
+install -m 0644 assets/dex2pc-*.svg "$pkg/usr/share/icons/hicolor/scalable/status/"
 install -D -m 0644 README.md "$pkg/usr/share/doc/dex2pc/README.md"
 install -D -m 0644 packaging/deb/copyright "$pkg/usr/share/doc/dex2pc/copyright"
 
@@ -62,7 +64,7 @@ Version: $version
 Architecture: amd64
 Maintainer: $maintainer
 Installed-Size: $installed_size
-Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= $min_scrcpy)
+Depends: libc6, libgcc-s1, android-tools-adb, scrcpy (>= $min_scrcpy), libegl1, libgl1, libx11-6, libxcursor1, libxi6, libx11-xcb1, libxrender1, libxkbcommon0, libwayland-client0, libwayland-egl1, fonts-noto-cjk
 Section: utils
 Priority: optional
 Description: Show Samsung DeX as a window on a Linux PC over USB-C

@@ -356,3 +356,12 @@ fn readme_recommends_usb_switch_before_wireless_pairing_and_explains_pair_failur
     assert!(wireless.contains("protocol fault (couldn't read status message)"));
     assert!(wireless.contains("Google 官方 platform-tools"));
 }
+
+#[test]
+fn gui_documentation_explains_gnome_extension_and_lifecycle() {
+    let gui = section(README, "\n## 圖形介面與工具列\n");
+    assert!(gui.contains("sudo dnf install gnome-shell-extension-appindicator"));
+    assert!(gui.contains("gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com"));
+    assert!(gui.contains("登出再登入"));
+    assert!(gui.contains("沒有 StatusNotifier"));
+}

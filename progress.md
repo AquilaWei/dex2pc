@@ -249,3 +249,8 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - 自動化：fake runner 驗證連線、失敗、USB 切換、啟動順序及 watch；CLI 驗證 clap、設定錯誤與無外部命令的 dry-run。
   - 實機待驗收（維持 passes: false）：配對碼互動、USB 切換後拔線、無線 DeX 鍵鼠操作、Wi-Fi 斷線後 --watch 重連與 Ctrl+C。
   - 不建立 tag、不推送、不發佈或打包。
+
+- F13（GUI／工具列，待實機驗收）：egui/eframe 精靈、ksni 工具列、channel 背景工作、可停止的 RunningCommand、單一實例 Unix socket。設定 mode/quality 只影響 GUI，CLI 優先順序保持原樣。畫質 high/balanced/low 對應 16M/8M/4M。
+  - 自動化：假 runner 驗證停止與逾時、配對不洩漏碼；狀態機與工具列事件驗證設定立即儲存、關窗與結束；IPC 驗證第二實例及舊 socket。
+  - 實機待驗收（passes: false）：GUI USB、GUI Wi-Fi、停止、記住設定、各工具列選單、四種圖示與 tooltip、關窗常駐、單一實例、無工具列退回；補測 0.3.2 Wi-Fi 斷線重連。
+  - 尚未驗收，不建立 tag、不推送或發佈。
