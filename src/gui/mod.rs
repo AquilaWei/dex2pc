@@ -1,4 +1,5 @@
 mod fonts;
+mod input;
 mod ipc;
 mod tray;
 mod view;
@@ -106,12 +107,36 @@ impl Model {
             self.choose(Action::Quit);
         }
     }
+    fn fail(&mut self, message: String) {
+        self.error = Some(if message.trim().is_empty() {
+            "操作失敗，請檢查手機連線與環境後重試。".into()
+        } else {
+            message
+        });
+        self.status = Status::Error;
+        // Tray-triggered failures must expose their explanation in the window.
+        self.visible = true;
+    }
+    fn finish(&mut self, status: Status, error: Option<String>) {
+        self.session.running = false;
+        if self.session.stopping {
+            self.status = Status::Idle;
+            self.error = None;
+        } else if status == Status::Error {
+            self.fail(error.unwrap_or_default());
+        } else {
+            self.status = status;
+            self.error = error;
+        }
+    }
     fn save(&mut self) -> bool {
         match config::save_gui(&self.path, &self.options) {
             Ok(()) => true,
             Err(err) => {
-                self.error = Some(format!("{}：{err}", self.path.display()));
-                self.status = Status::Error;
+                self.fail(format!(
+                    "無法儲存設定 {}：{err}；請檢查目錄與檔案權限後重試。",
+                    self.path.display()
+                ));
                 false
             }
         }
@@ -159,15 +184,22 @@ impl App {
     fn action(&mut self, action: Action) {
         self.model.choose(action);
         match action {
-            Action::Start
-                if !self.model.session.running
-                    && !self.busy
-                    && self.environment_done
-                    && self.install.is_empty() =>
-            {
+            Action::Start if !self.model.session.running && !self.busy => {
+                if !self.environment_done || !self.install.is_empty() {
+                    self.model
+                        .fail("環境尚未就緒，請按「重新檢查環境」並依安裝提示處理後重試。".into());
+                    return;
+                }
+                if self.load_error.is_some() {
+                    self.model
+                        .fail("設定檔無法讀取，請依視窗中的路徑與欄位提示修正後重新啟動。".into());
+                    return;
+                }
                 if !self.model.save() {
                     return;
                 }
+                self.model.error = None;
+                self.model.log.clear();
                 self.model.session.running = true;
                 self.model.session.stopping = false;
                 self.model.status = Status::Connecting;
@@ -190,7 +222,7 @@ impl App {
                         None,
                         &path,
                         &mut thread::sleep,
-                        &mut io::sink(),
+                        &mut worker::Messages::new(tx.clone()),
                     )
                     .and_then(|()| {
                         config::load(&path)
@@ -228,13 +260,7 @@ impl App {
                     }
                 }
                 Event::Finished(status, error) => {
-                    self.model.session.running = false;
-                    self.model.status = if self.model.session.stopping {
-                        Status::Idle
-                    } else {
-                        status
-                    };
-                    self.model.error = error;
+                    self.model.finish(status, error);
                     self.command.clear();
                 }
                 Event::Checked(result) => {
@@ -243,7 +269,9 @@ impl App {
                         self.model.session.stopping = false;
                     }
                     self.checked = result.is_ok();
-                    self.model.error = result.err();
+                    if let Err(err) = result {
+                        self.model.fail(err);
+                    }
                     self.command.clear();
                 }
                 Event::Switched(result) => {
@@ -254,20 +282,36 @@ impl App {
                             self.address.clone_from(&address);
                             self.model.options.wifi_address = Some(address);
                             self.model.options.mode = Some(Mode::Wifi);
+                            self.model.status = Status::Idle;
+                            self.model.error = None;
                             self.model.save();
                         }
                         Err(err) => {
-                            self.model.error = Some(err);
-                            self.model.status = Status::Error;
+                            self.model.fail(format!(
+                                "Wi-Fi 切換或連線失敗：{err}；{}",
+                                worker::NETWORK_HINT
+                            ));
                         }
                     }
                 }
                 Event::Paired(result) => {
                     self.busy = false;
                     self.command.clear();
-                    self.model.error = result.err();
+                    match result {
+                        Ok(()) => {
+                            self.model.status = Status::Idle;
+                            self.model.error = None;
+                        }
+                        Err(err) => self.model.fail(format!("配對失敗：{err}；請在手機重新開啟配對視窗，使用新的埠號與配對碼後重試。")),
+                    }
                 }
                 Event::Environment(commands) => {
+                    if !commands.is_empty() {
+                        self.model.fail(format!(
+                            "缺少必要工具或版本不符，請安裝後按「重新檢查環境」：\n{}",
+                            commands.join("\n")
+                        ));
+                    }
                     self.install = commands;
                     self.environment_done = true;
                     self.busy = false;
@@ -704,5 +748,114 @@ mod tests {
         app.tx.send(Event::Finished(Status::Error, None)).unwrap();
         app.pump(&egui::Context::default());
         assert_eq!(app.model.status, Status::Idle);
+    }
+    #[test]
+    fn finished_error_without_reason_gets_a_recovery_message() {
+        let (mut app, _dir) = headless_app();
+        app.tx.send(Event::Finished(Status::Error, None)).unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some("操作失敗，請檢查手機連線與環境後重試。")
+        );
+    }
+    #[test]
+    fn stop_during_wifi_connect_finishes_idle() {
+        let (mut app, _dir) = headless_app();
+        let (killed, rx) = mpsc::channel();
+        let runner = worker::SessionRunner::with_backend(app.tx.clone(), KillRunner(killed));
+        let mut connect = runner.spawn("adb", &["connect", "phone:5555"]).unwrap();
+        app.model.session.running = true;
+        app.pump(&egui::Context::default());
+        app.action(Action::Stop);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(1)).unwrap(), "adb");
+        assert_eq!(connect.try_wait().unwrap().unwrap().code, None);
+        app.tx
+            .send(Event::Finished(Status::Error, Some("連線中止".into())))
+            .unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!((app.model.status, app.model.error), (Status::Idle, None));
+    }
+    #[test]
+    fn successful_usb_check_does_not_erase_a_session_error() {
+        let (mut app, _dir) = headless_app();
+        app.model
+            .fail("投影失敗（exit code 7）。請檢查手機連線與環境，依下方訊息處理後重試。".into());
+        app.tx.send(Event::Checked(Ok("phone".into()))).unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some("投影失敗（exit code 7）。請檢查手機連線與環境，依下方訊息處理後重試。")
+        );
+    }
+    #[test]
+    fn wifi_switch_error_explains_current_ip_and_usb_recovery() {
+        let (mut app, _dir) = headless_app();
+        app.tx
+            .send(Event::Switched(Err("未建立 Wi-Fi 連線，設定未儲存".into())))
+            .unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some(
+                "Wi-Fi 切換或連線失敗：未建立 Wi-Fi 連線，設定未儲存；手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。"
+            )
+        );
+    }
+    #[test]
+    fn pairing_error_explains_how_to_retry_on_the_phone() {
+        let (mut app, _dir) = headless_app();
+        app.tx
+            .send(Event::Paired(Err("無法執行 adb 配對".into())))
+            .unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some(
+                "配對失敗：無法執行 adb 配對；請在手機重新開啟配對視窗，使用新的埠號與配對碼後重試。"
+            )
+        );
+    }
+    #[test]
+    fn successful_pairing_clears_the_previous_error_state() {
+        let (mut app, _dir) = headless_app();
+        app.model.fail("配對失敗".into());
+        app.tx.send(Event::Paired(Ok(()))).unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!((app.model.status, app.model.error), (Status::Idle, None));
+    }
+    #[test]
+    fn missing_environment_tools_explain_the_install_command() {
+        let (mut app, _dir) = headless_app();
+        app.tx
+            .send(Event::Environment(vec!["sudo apt install adb".into()]))
+            .unwrap();
+        app.pump(&egui::Context::default());
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some("缺少必要工具或版本不符，請安裝後按「重新檢查環境」：\nsudo apt install adb")
+        );
+    }
+    #[test]
+    fn tray_start_before_environment_ready_explains_the_blocker() {
+        let (mut app, _dir) = headless_app();
+        app.action(Action::Start);
+        assert_eq!(
+            app.model.error.as_deref(),
+            Some("環境尚未就緒，請按「重新檢查環境」並依安裝提示處理後重試。")
+        );
+    }
+    #[test]
+    fn tray_failure_opens_the_window_to_show_its_reason() {
+        let (mut app, _dir) = headless_app();
+        app.model.visible = false;
+        app.tx
+            .send(Event::Finished(
+                Status::Error,
+                Some("投影失敗，請重新連線。".into()),
+            ))
+            .unwrap();
+        app.pump(&egui::Context::default());
+        assert!(app.model.visible);
     }
 }

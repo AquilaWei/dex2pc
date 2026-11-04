@@ -1,6 +1,6 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.3.4-blue)
+![version](https://img.shields.io/badge/version-0.3.5-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
@@ -204,6 +204,10 @@ dex2pc gui
 首次開啟會顯示設定精靈：檢查 adb／scrcpy（缺少時可複製安裝指令），選 USB 或 Wi-Fi，設定畫質並儲存。USB 模式每兩秒偵測手機；看到未授權提示時，請在手機按「允許 USB 偵錯」。Wi-Fi 建議先接 USB 按「切換到 Wi-Fi」，進階選項也可輸入連線 IP:埠，或配對 IP:埠與六位配對碼；配對埠與連線埠通常不同。配對碼不寫入設定或日誌。
 
 「開啟 DeX」一律使用 watch 模式，畫面顯示連線狀態與訊息；「停止」會終止 scrcpy。工具列選單可開啟／停止、切換 USB／Wi-Fi、選畫質、從 USB 切換 Wi-Fi、開啟設定視窗及結束。選單變更立即儲存，下一次啟動投影生效。
+
+GUI 的無線偵錯操作是**先配對，再連線**：配對欄填「使用配對碼配對裝置」視窗中的 IP:埠，連線欄填手機「無線偵錯」頁面上的「IP 位址和連接埠」。兩欄也接受只填埠號，主機位址優先取自另一欄；另一欄空白時才用已儲存的 Wi-Fi 位址。手機換網路後 IP 可能改變，請以手機目前顯示的完整 IP:埠為準，或接回 USB 並允許偵錯，再按「切換到 Wi-Fi」。
+
+GUI 初次 Wi-Fi 連線失敗就會顯示原因與處理方式；投影中斷後會自動重連，連續三次未恢復有效連線就停止並顯示錯誤。「停止」可立即終止正在連線或投影的子行程。CLI watch 仍使用原有的五次上限；GUI 與 CLI 都不再把從未通過健康探測的重連誤算為成功。
 
 設定沿用 `config.toml`，新增 `mode = "usb"` 或 `"wifi"`，以及 `quality = "high"`（16M）、`"balanced"`（8M，預設）、`"low"`（4M）。這兩個欄位只控制 GUI；CLI 仍沿用自己的參數與 `video_bit_rate`。格式錯誤會顯示設定路徑與欄位，修正後重新開啟。
 

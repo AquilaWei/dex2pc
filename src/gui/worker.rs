@@ -206,12 +206,28 @@ fn command_result(
 }
 
 /// 將原本 doctor/start 的輸出逐行送回 UI；不讓背景工作直接存取 egui。
-struct Messages(Sender<Event>);
+pub(super) struct Messages {
+    events: Sender<Event>,
+    recent: Vec<u8>,
+}
+impl Messages {
+    pub(super) fn new(events: Sender<Event>) -> Self {
+        Self {
+            events,
+            recent: Vec::new(),
+        }
+    }
+}
 impl Write for Messages {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0
+        self.events
             .send(Event::Log(String::from_utf8_lossy(bytes).into_owned()))
             .map_err(|_| io::Error::other("視窗已結束"))?;
+        self.recent.extend_from_slice(bytes);
+        // Keep only recent diagnostics; watch sessions can run indefinitely.
+        if self.recent.len() > 32_768 {
+            self.recent.drain(..self.recent.len() - 32_768);
+        }
         Ok(bytes.len())
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -219,12 +235,64 @@ impl Write for Messages {
     }
 }
 
+fn session_result(
+    result: io::Result<u8>,
+    mode: crate::preferences::Mode,
+    log: &str,
+) -> (Status, Option<String>) {
+    let reason = match result {
+        Ok(0) => return (Status::Idle, None),
+        Ok(code) => format!("投影失敗（exit code {code}）。"),
+        Err(err) => format!("投影失敗：{err}。"),
+    };
+    let hint = if log.contains("Network is unreachable") || log.contains("No route to host") {
+        NETWORK_HINT
+    } else if log.contains("尚未授權") || log.contains("unauthorized") {
+        "請解鎖手機並按「允許 USB 偵錯」，再重試。"
+    } else if log.contains("scrcpy 以 exit code") || log.contains("無法執行 scrcpy") {
+        "scrcpy 啟動或執行失敗；請確認版本至少為 3.2，並依下方訊息檢查手機連線後重試。"
+    } else if mode == crate::preferences::Mode::Wifi {
+        NETWORK_HINT
+    } else {
+        "請檢查手機連線與環境，依下方訊息處理後重試。"
+    };
+    let mut message = format!("{reason}{hint}");
+    let mut lines = log
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty() && *line != "環境未就緒，未啟動 scrcpy；請依上面的訊息處理後再執行"
+        })
+        .rev();
+    if let Some(last) = lines.next() {
+        message.push('\n');
+        // run_wifi ends with a summary; retain adb's preceding network reason too.
+        if last.starts_with("Wi-Fi 連線失敗：")
+            && let Some(reason) = lines.next()
+        {
+            message.push_str(reason);
+            message.push('\n');
+        }
+        message.push_str(last);
+    }
+    (Status::Error, Some(message))
+}
+
+pub(super) const NETWORK_HINT: &str = "手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。";
+
 pub fn session(events: Sender<Event>, mut options: Options) {
     thread::spawn(move || {
         let runner = SessionRunner::new(events.clone());
         options.video_bit_rate = Some(options.quality.unwrap_or_default().bitrate().into());
-        let mut out = Messages(events.clone());
-        let watch = start::Watch::default();
+        let mut out = Messages::new(events.clone());
+        let watch = start::Watch {
+            max_failures: if options.mode == Some(crate::preferences::Mode::Wifi) {
+                start::WIFI_MAX_FAILURES
+            } else {
+                start::Watch::default().max_failures
+            },
+            ..start::Watch::default()
+        };
         let result = match options.mode.unwrap_or_default() {
             crate::preferences::Mode::Usb => start::run(
                 &runner,
@@ -246,14 +314,12 @@ pub fn session(events: Sender<Event>, mut options: Options) {
                 None => Err(io::Error::other("未設定 wifi_address，請先連線")),
             },
         };
-        let status = match result {
-            Ok(0) => Status::Idle,
-            Ok(_) | Err(_) => Status::Error,
-        };
-        let _ = events.send(Event::Finished(
-            status,
-            result.err().map(|err| err.to_string()),
-        ));
+        let (status, error) = session_result(
+            result,
+            options.mode.unwrap_or_default(),
+            &String::from_utf8_lossy(&out.recent),
+        );
+        let _ = events.send(Event::Finished(status, error));
     });
 }
 
@@ -264,6 +330,77 @@ mod tests {
         Arc,
         atomic::{AtomicBool, Ordering},
     };
+    #[test]
+    fn nonzero_exit_always_includes_a_recovery_message() {
+        assert_eq!(
+            session_result(Ok(7), crate::preferences::Mode::Usb, "").1,
+            Some("投影失敗（exit code 7）。請檢查手機連線與環境，依下方訊息處理後重試。".into())
+        );
+    }
+    #[test]
+    fn unreachable_wifi_reports_changed_ip_and_keeps_adb_reason() {
+        assert_eq!(
+            session_result(Ok(1), crate::preferences::Mode::Wifi,
+                "failed to connect to '192.168.12.137:5555': Network is unreachable\nWi-Fi 連線失敗：192.168.12.137:5555\n").1,
+            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。\nfailed to connect to '192.168.12.137:5555': Network is unreachable\nWi-Fi 連線失敗：192.168.12.137:5555".into())
+        );
+    }
+    #[test]
+    fn no_route_reports_changed_ip_and_current_wireless_debugging_address() {
+        assert_eq!(
+            session_result(Ok(1), crate::preferences::Mode::Wifi, "No route to host\n").1,
+            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。\nNo route to host".into())
+        );
+    }
+    #[test]
+    fn unauthorized_phone_explains_how_to_allow_debugging() {
+        assert_eq!(
+            session_result(Ok(1), crate::preferences::Mode::Usb,
+                "裝置 phone 尚未授權：請在手機上按「允許 USB 偵錯」\n環境未就緒，未啟動 scrcpy；請依上面的訊息處理後再執行\n").1,
+            Some("投影失敗（exit code 1）。請解鎖手機並按「允許 USB 偵錯」，再重試。\n裝置 phone 尚未授權：請在手機上按「允許 USB 偵錯」".into())
+        );
+    }
+    #[test]
+    fn scrcpy_failure_keeps_exit_code_and_last_diagnostic() {
+        assert_eq!(
+            session_result(Ok(5), crate::preferences::Mode::Usb,
+                "scrcpy 以 exit code 5 結束：\nERROR: Could not create display\n").1,
+            Some("投影失敗（exit code 5）。scrcpy 啟動或執行失敗；請確認版本至少為 3.2，並依下方訊息檢查手機連線後重試。\nERROR: Could not create display".into())
+        );
+    }
+    #[test]
+    fn io_error_has_a_recovery_message() {
+        assert_eq!(
+            session_result(Err(io::Error::other("指令逾時，請確認手機連線")), crate::preferences::Mode::Wifi, "").1,
+            Some("投影失敗：指令逾時，請確認手機連線。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。".into())
+        );
+    }
+    #[test]
+    fn successful_session_has_no_error_message() {
+        assert_eq!(
+            session_result(Ok(0), crate::preferences::Mode::Wifi, "old failure"),
+            (Status::Idle, None)
+        );
+    }
+    #[test]
+    fn streamed_log_fragments_are_retained_for_the_final_error() {
+        let (events, _rx) = mpsc::channel();
+        let mut out = Messages::new(events);
+        out.write_all(b"Network is ").unwrap();
+        out.write_all(b"unreachable\n").unwrap();
+        assert_eq!(
+            String::from_utf8(out.recent).unwrap(),
+            "Network is unreachable\n"
+        );
+    }
+    #[test]
+    fn initial_wifi_connect_has_a_fifteen_second_timeout() {
+        let result = command_result("adb", &["connect", "192.168.12.137:5555"], |timeout| {
+            assert_eq!(timeout, Duration::from_secs(15));
+            Ok(TimedOutput::TimedOut)
+        });
+        assert_eq!(result.unwrap_err().to_string(), "指令逾時，請確認手機連線");
+    }
     #[derive(Default)]
     struct KillFlag(AtomicBool);
     impl KillFlag {
