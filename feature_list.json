@@ -113,6 +113,18 @@
         "此功能由使用者實機確認後才可標為完成，不假裝已測過"
       ],
       "passes": true
+    },
+    {
+      "id": "F12",
+      "description": "Wi-Fi 無線 adb 投影：配對、USB 切換、儲存位址與自動重連",
+      "steps": [
+        "開啟無線偵錯，執行 dex2pc pair IP:PORT 並輸入配對碼",
+        "dex2pc connect IP:PORT 成功後儲存 wifi_address；dex2pc connect 能從 USB 切換",
+        "拔除 USB，dex2pc start --wifi 開出 DeX 並可使用鍵盤滑鼠",
+        "Wi-Fi 斷線後 --watch 自動重連，Ctrl+C 可停止",
+        "fmt、clippy、cargo test --locked 通過；以上四項需實機驗收"
+      ],
+      "passes": false
     }
   ],
   "verify": "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",

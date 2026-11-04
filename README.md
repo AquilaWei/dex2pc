@@ -3,10 +3,11 @@
 ![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
-**用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
+**透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
 > 目前狀態：`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
-> 以上功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**，rpm／deb 安裝包附的選單捷徑也已在實體主機確認，細節見「[實機驗收清單](#實機驗收清單)」。
+> Wi-Fi 支援新增 `pair`、`connect` 與 `start --wifi`，無線功能尚待實機驗收。
+> 既有 USB 功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**，rpm／deb 安裝包附的選單捷徑也已在實體主機確認，細節見「[實機驗收清單](#實機驗收清單)」。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
 ## 運作方式
@@ -25,17 +26,17 @@ flowchart LR
     DEX2PC -- "1. adb 檢查手機、One UI、USB 速度" --> PHONE
     DEX2PC -- "2. 啟動 scrcpy --new-display" --> WIN
     VD -- "3. 畫面" --> SERVER
-    SERVER -- "4. H.264/H.265 影像串流<br/>USB-C 線（ADB 資料通道）" --> WIN
+    SERVER -- "4. H.264/H.265 影像串流<br/>USB-C 線或 Wi-Fi（ADB 資料通道）" --> WIN
     KM -- "5. 點擊、捲動、打字" --> WIN
-    WIN -- "6. 鍵鼠事件<br/>同一條 USB-C 線" --> SERVER
+    WIN -- "6. 鍵鼠事件<br/>同一條 USB-C 線或 Wi-Fi" --> SERVER
     SERVER -- "7. 注入輸入" --> VD
 ```
 
-1. **dex2pc** 經 adb 確認手機已授權、是 One UI 8 以上、USB 速度足夠
+1. **dex2pc** 使用 USB adb，或先連接 Wi-Fi adb，再確認手機已授權、是 One UI 8 以上；USB 模式另外診斷連線速度
 2. 檢查通過後啟動 **scrcpy**，在手機上建立**虛擬顯示器**，DeX 桌面跑在上面
-3. 手機把畫面壓成**影片串流**，經 USB-C 線的資料通道傳回電腦，顯示成一個視窗
+3. 手機把畫面壓成**影片串流**，經 USB-C 線或 Wi-Fi 的 ADB 資料通道傳回電腦，顯示成一個視窗
 4. 在視窗裡的**鍵盤滑鼠操作**由 scrcpy 送回手機，所以用電腦的鍵鼠就能直接操作 DeX
-5. **關閉視窗**就結束；`--watch` 時拔線後手機接回來會自動重新開啟
+5. **關閉視窗**就結束；`--watch` 時 USB 等裝置接回，Wi-Fi 則重試 `adb connect`，連線恢復後自動重新開啟
 
 ## 需求
 
@@ -43,7 +44,7 @@ flowchart LR
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
 - **adb**：Fedora `sudo dnf install android-tools`；Debian / Ubuntu `sudo apt install adb`（用安裝包時會自動裝）
 - **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：Fedora `sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`；Debian / Ubuntu 見下方 deb 安裝
-- **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
+- USB 模式需要**支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）；Wi-Fi 模式需要手機與電腦之間可互通的網路
 - 從原始碼建置才需要 Rust（cargo）；用安裝包不需要
 
 ## 安裝
@@ -191,6 +192,41 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 > ⚠️ 其他機型若開出的視窗是空白或只有一般手機畫面、不是 DeX，
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
 
+## 無線投影
+
+Wi-Fi 模式仍是 **adb → 環境檢查 → scrcpy --new-display**。手機不會主動搜尋到電腦；這不是 Samsung 原生 Wireless DeX／Miracast，請在電腦終端執行指令。
+
+1. 手機與電腦連上可互通的 Wi-Fi 網路，在手機「設定 → 開發人員選項」開啟「無線偵錯」。
+2. 點「使用配對碼配對裝置」，把畫面的配對 IP 與埠填入 `pair`；配對碼由 adb 互動詢問。
+3. 回到無線偵錯主畫面，把「IP 位址與通訊埠」填入 `connect`。**連線埠與配對埠通常不同**。
+
+```bash
+dex2pc pair 192.168.1.20:37001
+dex2pc connect 192.168.1.20:39501
+dex2pc start --wifi
+```
+
+成功連線會把 `wifi_address` 存到設定檔，保留其他欄位（不保留註解）。位址只接受 IPv4 或 ASCII DNS 主機名加十進位埠號 1–65535，例如 `phone.local:5555`；不接受 IPv6、空白、底線或以連字號開頭／結尾的主機名標籤。
+
+也可以先接 USB 並完成 USB 偵錯授權，再切換到 TCP 5555（需信任目前網路）：
+
+```bash
+dex2pc connect
+# 多台 USB 手機時：dex2pc connect --serial R5CW1234ABC
+# 成功後可拔除 USB 線
+dex2pc start --wifi
+```
+
+手動指定地址會覆蓋此次啟動使用的設定值；`--wifi` 與 `--serial` 互斥。`--dry-run` 不執行任何外部指令，僅印出含無線序號的 scrcpy 指令：
+
+```bash
+dex2pc start --wifi 192.168.1.20:5555 --dry-run
+dex2pc start --wifi --watch
+dex2pc start --wifi --video-bit-rate 4M
+```
+
+Wi-Fi 較慢時可降低 `--video-bit-rate`。`--watch` 斷線後改用 `adb connect`，每次失敗間隔 2 秒，連續 5 次失敗放棄；按 Ctrl+C 結束。手機重新連網、重開機或重新開啟無線偵錯後，IP／埠可能改變，請重新執行 `connect IP:PORT`。
+
 ## 建置與執行
 
 以下是**開發用**：在原始碼目錄裡用 `cargo run` 直接執行（已安裝的使用者把 `cargo run --` 換成 `dex2pc` 即可，不需要 Rust）。
@@ -257,6 +293,13 @@ cargo run --example sync_version_badge
 - [x] **選單捷徑**：不跑 `dex2pc install-desktop`，應用程式選單就出現「Samsung DeX」（可能要重新登入才會出現）
 - [x] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
 - [x] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
+
+無線功能尚待實機驗收：
+
+- [ ] 無線偵錯配對：`dex2pc pair IP:PORT` 能互動輸入配對碼
+- [ ] USB 切換：`dex2pc connect` 能取得手機 Wi-Fi IP 並儲存連線位址
+- [ ] 拔除 USB 後 `dex2pc start --wifi` 開出 DeX，鍵盤滑鼠可操作
+- [ ] Wi-Fi 斷線後 `--watch` 自動重連；Ctrl+C 可停止
 
 ## 頻寬：USB 2.0 就夠嗎？
 
