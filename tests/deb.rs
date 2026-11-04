@@ -524,3 +524,17 @@ fn build_refuses_when_du_cannot_measure_installed_size() {
 
     assert!(!output.status.success(), "{output:?}");
 }
+
+#[test]
+fn deb_declares_noto_cjk_as_a_runtime_dependency() {
+    let script = std::fs::read_to_string(Path::new(ROOT).join("packaging/build-deb.sh")).unwrap();
+    let depends = script
+        .lines()
+        .find(|line| line.starts_with("Depends:"))
+        .unwrap();
+    assert!(
+        depends
+            .split(", ")
+            .any(|dependency| dependency == "fonts-noto-cjk")
+    );
+}

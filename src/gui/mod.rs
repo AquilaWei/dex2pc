@@ -1,3 +1,4 @@
+mod fonts;
 mod ipc;
 mod tray;
 mod view;
@@ -152,6 +153,7 @@ struct App {
     install: Vec<String>,
     environment_done: bool,
     load_error: Option<String>,
+    font_notice: Option<&'static str>,
 }
 impl App {
     fn action(&mut self, action: Action) {
@@ -452,6 +454,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         install: Vec::new(),
         environment_done: false,
         load_error: None,
+        font_notice: None,
     };
     app.load_error.clone_from(&app.model.error);
     app.environment();
@@ -467,34 +470,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             ..Default::default()
         },
         Box::new(move |cc| {
-            load_fonts(&cc.egui_ctx);
+            app.font_notice = (!fonts::install(&cc.egui_ctx)).then_some(fonts::NOTICE);
             Ok(Box::new(app))
         }),
     )
     .map_err(|err| io::Error::other(err.to_string()))?;
     Ok(())
-}
-
-fn load_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    for path in [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-    ] {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts
-                .font_data
-                .insert("cjk".into(), egui::FontData::from_owned(bytes).into());
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .insert(0, "cjk".into());
-            break;
-        }
-    }
-    ctx.set_fonts(fonts);
 }
 
 fn icons(dir: &std::path::Path) -> io::Result<PathBuf> {
@@ -685,6 +666,7 @@ mod tests {
                 install: Vec::new(),
                 environment_done: false,
                 load_error: None,
+                font_notice: None,
             },
             dir,
         )

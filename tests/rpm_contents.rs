@@ -335,3 +335,12 @@ fn smoke_test_fails_when_no_container_engine_in_ci() {
             .contains("CI 不可略過")
     );
 }
+
+#[test]
+fn rpm_declares_noto_cjk_as_a_runtime_dependency() {
+    let spec = std::fs::read_to_string(Path::new(ROOT).join("packaging/rpm/dex2pc.spec")).unwrap();
+    assert!(spec.lines().any(|line| {
+        line.split_whitespace()
+            .eq(["Requires:", "google-noto-sans-cjk-fonts"])
+    }));
+}

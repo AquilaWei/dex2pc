@@ -49,6 +49,8 @@ flowchart LR
 
 ## 安裝
 
+GUI 需要系統中文字型；rpm／deb 會強制相依並自動安裝。自行編譯時，Fedora 請執行 `sudo dnf install google-noto-sans-cjk-fonts`，Debian／Ubuntu 請執行 `sudo apt install fonts-noto-cjk`。程式不內附字型，啟動時先透過 fontconfig 尋找繁中字型，再檢查常見路徑；找不到時仍可啟動，並顯示英文安裝提示。
+
 三種方式擇一：**rpm 安裝包**（Fedora x86_64）、**deb 安裝包**（Debian 13 / Ubuntu 26.04 以上，amd64），或 **`cargo install`**（從原始碼，其他發行版）。
 
 ### 方式一：rpm 安裝包（Fedora x86_64）

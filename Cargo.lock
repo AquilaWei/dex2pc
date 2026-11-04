@@ -524,6 +524,7 @@ dependencies = [
  "ksni",
  "tempfile",
  "toml",
+ "ttf-parser",
 ]
 
 [[package]]
