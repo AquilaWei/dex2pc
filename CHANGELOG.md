@@ -6,6 +6,8 @@
 
 ### 修正
 
+- Wi-Fi 投影連線無回應時會主動關閉凍結的 scrcpy 視窗，`--watch` 自動嘗試重連；未加 `--watch` 則回傳斷線狀態，不再無限等待。USB 行為不變。
+
 - `start --wifi` 與無線 `--watch` 每次連線前先清除該位址的舊 adb transport，避免 Wi-Fi 中斷後誤報「already connected」而卡在讀取裝置資訊。清除失敗仍繼續連線，中斷則停止；手動 `dex2pc connect IP:PORT` 保留原行為，避免切斷其他使用中的工作階段。
 - 無線連線輸出移除首尾空白，不再額外印出空白行。
 

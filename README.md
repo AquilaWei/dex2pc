@@ -231,6 +231,8 @@ dex2pc start --wifi --watch
 dex2pc start --wifi --video-bit-rate 4M
 ```
 
+Wi-Fi 斷線約在 15–20 秒內偵測到；加上 `--watch` 會關閉凍結的視窗並嘗試重新連線。
+
 Wi-Fi 較慢時可降低 `--video-bit-rate`。`--watch` 斷線後改用 `adb connect`，每次失敗間隔 2 秒，連續 5 次失敗放棄；按 Ctrl+C 結束。手機重新連網、重開機或重新開啟無線偵錯後，IP／埠可能改變，請重新執行 `connect IP:PORT`。
 
 ## 建置與執行
