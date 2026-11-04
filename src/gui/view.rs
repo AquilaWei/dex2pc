@@ -3,6 +3,9 @@ use super::{Action, App, Event, Mode, Quality, egui, io, pair, thread, worker};
 impl App {
     pub(super) fn panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
+            if let Some(notice) = self.font_notice {
+                ui.label(notice);
+            }
             ui.heading("DeX 設定與投影");
             ui.label(format!("狀態：{}", self.model.status.label()));
             for command in &self.install {
