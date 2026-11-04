@@ -93,3 +93,7 @@ GUI 選用 eframe 0.33.3 的 glow（OpenGL）、winit 0.30.13 的 X11／Wayland�
 winit 的 RandR 使用純 Rust x11rb 協定，不另要求 libXrandr；也沒有使用 xkbcommon-dl 的 X11 擴充載入器。字型另由 fonts-noto-cjk／google-noto-sans-cjk-fonts 提供。直接連結的 libm.so.6 和 loader 由既有 libc6／rpm 自動產生的 glibc 相依提供。
 
 ksni 0.3.7 使用純 Rust zbus 傳輸 D-Bus 訊息，不連結 libdbus 或 GTK，無須新增對應函式庫套件；執行桌面需有 session bus，沒有 StatusNotifier host 時退回視窗模式。
+
+### glibc 建置基線
+
+發布 deb 必須在 Debian 13（glibc 2.41）或更舊且支援 Rust 1.88 的環境建置，再於 Debian 13／Ubuntu 26.04 驗證。Fedora 44 的 glibc 2.43 會讓 GUI 數學函式 acosf／atan2f 連到新版符號，雖能成功打包，安裝到 Debian 13 後仍無法啟動。不要直接散布在較新 Fedora 建置的 deb；`readelf --version-info` 可檢查符號版本，安裝 smoke test 才是最後確認。CI 的 Ubuntu runner 仍需通過 Debian 13 smoke test，不能略過。
