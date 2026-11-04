@@ -1,6 +1,6 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.3.1-blue)
+![version](https://img.shields.io/badge/version-0.3.2-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
@@ -196,7 +196,20 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 
 Wi-Fi 模式仍是 **adb → 環境檢查 → scrcpy --new-display**。手機不會主動搜尋到電腦；這不是 Samsung 原生 Wireless DeX／Miracast，請在電腦終端執行指令。
 
-1. 手機與電腦連上可互通的 Wi-Fi 網路，在手機「設定 → 開發人員選項」開啟「無線偵錯」。
+**建議先從 USB 切換**，可跳過無線配對。先讓手機與電腦連上可互通的 Wi-Fi 網路，接上 USB 並完成 USB 偵錯授權，再切換到 TCP 5555（需信任目前網路）：
+
+```bash
+dex2pc connect
+# 多台 USB 手機時：dex2pc connect --serial R5CW1234ABC
+# 成功後可拔除 USB 線
+dex2pc start --wifi
+```
+
+切換時先讀取手機 wlan0 的 IP，再執行 `adb tcpip 5555`；這個指令會重啟手機 adbd，所以連線最多嘗試三次，失敗間隔一秒。讀不到 IP 時不切換，請先確認手機 Wi-Fi 已連線。`dex2pc connect IP:PORT` 與 `start --wifi` 仍只嘗試一次初始連線。
+
+若不能接 USB，也可以使用手機的無線偵錯配對：
+
+1. 在手機「設定 → 開發人員選項」開啟「無線偵錯」。
 2. 點「使用配對碼配對裝置」，把畫面的配對 IP 與埠填入 `pair`；配對碼由 adb 互動詢問。
 3. 回到無線偵錯主畫面，把「IP 位址與通訊埠」填入 `connect`。**連線埠與配對埠通常不同**。
 
@@ -206,16 +219,9 @@ dex2pc connect 192.168.1.20:39501
 dex2pc start --wifi
 ```
 
+配對失敗時，請重新開啟手機配對視窗，使用**新的配對碼與埠號**，並執行 `adb kill-server` 後重試。Fedora／發行版 adb 有已知配對失敗，例如 `protocol fault (couldn't read status message)`；可改用 [Google 官方 platform-tools](https://developer.android.com/tools/releases/platform-tools)，確認 PATH 使用該版本的 adb；也可接 USB 執行 `dex2pc connect` 跳過配對。
+
 成功連線會把 `wifi_address` 存到設定檔，保留其他欄位（不保留註解）。位址只接受 IPv4 或 ASCII DNS 主機名加十進位埠號 1–65535，例如 `phone.local:5555`；不接受 IPv6、空白、底線或以連字號開頭／結尾的主機名標籤。
-
-也可以先接 USB 並完成 USB 偵錯授權，再切換到 TCP 5555（需信任目前網路）：
-
-```bash
-dex2pc connect
-# 多台 USB 手機時：dex2pc connect --serial R5CW1234ABC
-# 成功後可拔除 USB 線
-dex2pc start --wifi
-```
 
 手動指定地址會覆蓋此次啟動使用的設定值；`--wifi` 與 `--serial` 互斥。`--dry-run` 不執行任何外部指令，僅印出含無線序號的 scrcpy 指令：
 
@@ -224,6 +230,8 @@ dex2pc start --wifi 192.168.1.20:5555 --dry-run
 dex2pc start --wifi --watch
 dex2pc start --wifi --video-bit-rate 4M
 ```
+
+Wi-Fi 斷線約在 15–20 秒內偵測到；加上 `--watch` 會關閉凍結的視窗並嘗試重新連線。
 
 Wi-Fi 較慢時可降低 `--video-bit-rate`。`--watch` 斷線後改用 `adb connect`，每次失敗間隔 2 秒，連續 5 次失敗放棄；按 Ctrl+C 結束。手機重新連網、重開機或重新開啟無線偵錯後，IP／埠可能改變，請重新執行 `connect IP:PORT`。
 

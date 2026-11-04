@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-04
+
+### 修正
+
+- Wi-Fi 投影連線無回應時會主動關閉凍結的 scrcpy 視窗，`--watch` 自動嘗試重連；未加 `--watch` 則回傳斷線狀態，不再無限等待。USB 行為不變。
+
+- `start --wifi` 與無線 `--watch` 每次連線前先清除該位址的舊 adb transport，避免 Wi-Fi 中斷後誤報「already connected」而卡在讀取裝置資訊。清除失敗仍繼續連線，中斷則停止；手動 `dex2pc connect IP:PORT` 保留原行為，避免切斷其他使用中的工作階段。
+- 無線連線輸出移除首尾空白，不再額外印出空白行。
+
+- `dex2pc connect` 從 USB 切換時，先讀 Wi-Fi IP 再切換傳輸模式，避免手機重啟 adb 時出現 `error: closed`；切換後若連線尚未就緒，最多嘗試三次、間隔一秒。讀不到 IP 時不切換，指定 IP 連線與 `start --wifi` 行為不變。
+- 無線配對失敗後顯示排除提示：重新開啟配對視窗並使用新的碼與埠、執行 `adb kill-server`、改用 Google 官方 platform-tools，或接 USB 執行 `dex2pc connect` 跳過配對。README 改為優先建議 USB 切換。
+
 ## [0.3.1] - 2026-11-03
 
 ### 新增
