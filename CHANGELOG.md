@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-03
+
 ### 新增
 
 - **Wi-Fi 無線投影**（尚待實機驗收）：`dex2pc pair IP:PORT` 互動配對、`dex2pc connect IP:PORT` 連線並儲存位址，或 `dex2pc connect` 從 USB 切換。`dex2pc start --wifi [IP:PORT]` 使用指定或已儲存的位址開啟 DeX，`--watch` 在無線斷線後自動重連；`doctor` 顯示 Wi-Fi 連線，`config` 顯示 `wifi_address`。這是 scrcpy 的無線 adb 傳輸，不是原生 Wireless DeX／Miracast。
