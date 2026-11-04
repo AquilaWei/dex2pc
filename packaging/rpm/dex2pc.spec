@@ -27,15 +27,16 @@ BuildRequires:  desktop-file-utils
 # 3.2 是程式內檢查的最低版本（src/doctor.rs 的 MIN_SCRCPY），兩邊要一起改
 Requires:       android-tools
 Requires:       scrcpy >= 3.2
-Requires:       libX11
-Requires:       libXcursor
-Requires:       libXi
-Requires:       libX11-xcb
-Requires:       libXrender
-Requires:       libxkbcommon
-Requires:       wayland-libs
-Requires:       mesa-libEGL
-Requires:       mesa-libGL
+Requires:       libX11.so.6()(64bit)
+Requires:       libXcursor.so.1()(64bit)
+Requires:       libXi.so.6()(64bit)
+Requires:       libX11-xcb.so.1()(64bit)
+Requires:       libXrender.so.1()(64bit)
+Requires:       libxkbcommon.so.0()(64bit)
+Requires:       libwayland-client.so.0()(64bit)
+Requires:       libwayland-egl.so.1()(64bit)
+Requires:       libEGL.so.1()(64bit)
+Requires:       libGL.so.1()(64bit)
 Requires:       google-noto-sans-cjk-fonts
 
 %description
