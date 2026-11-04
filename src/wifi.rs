@@ -2,6 +2,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::net::Ipv4Addr;
 use std::path::Path;
+use std::time::Duration;
 
 use crate::device;
 use crate::runner::CommandRunner;
@@ -41,12 +42,17 @@ pub fn validate(address: &str) -> Result<String, String> {
 
 /// 配對碼交由 adb 從終端互動讀取；位址無效或程序啟動失敗時不繼續。
 /// 沿用 adb 的退出碼，訊號中止則回傳 1。
-pub fn pair(runner: &dyn CommandRunner, address: &str) -> io::Result<u8> {
+pub fn pair(runner: &dyn CommandRunner, address: &str, out: &mut dyn Write) -> io::Result<u8> {
     validate(address).map_err(io::Error::other)?;
-    Ok(runner
-        .interactive("adb", &["pair", address])?
-        .and_then(|c| u8::try_from(c).ok())
-        .unwrap_or(1))
+    let code = runner.interactive("adb", &["pair", address])?;
+    // status 等 adb 印完自己的錯誤才返回，提示不會蓋過原始原因。
+    if code.is_some_and(|code| code != 0) {
+        writeln!(
+            out,
+            "配對失敗：請重新開啟手機的配對視窗，使用新的配對碼與埠號；執行 adb kill-server 後重試。Fedora／發行版 adb 有已知配對失敗（protocol fault (couldn't read status message)），可改用 Google 官方 platform-tools，或接 USB 執行 dex2pc connect 跳過配對。"
+        )?;
+    }
+    Ok(code.and_then(|c| u8::try_from(c).ok()).unwrap_or(1))
 }
 
 /// 保留中斷狀態，讓 watch 在 Ctrl+C 後停止而非再試。
@@ -89,25 +95,53 @@ pub fn connect(
 }
 
 /// 先完成連線才改設定，避免把不可用的位址寫入；保留原 TOML 欄位但不保留註解。
-/// USB 模式只選非網路序號；命令、裝置選擇、無 WLAN IP 或設定檔讀寫失敗皆回傳錯誤。
+/// USB 模式只選非網路序號並在重啟 adbd 後短暫重試；sleep 由呼叫端注入。
+/// 命令、裝置選擇、無 WLAN IP 或設定檔讀寫失敗皆回傳錯誤。
 pub fn connect_and_save(
     runner: &dyn CommandRunner,
     address: Option<&str>,
     serial: Option<&str>,
     path: &Path,
+    sleep: &mut dyn FnMut(Duration),
     out: &mut dyn Write,
 ) -> io::Result<()> {
     // 先驗證原設定，避免覆寫損壞的檔案。
     crate::config::load(path).map_err(io::Error::other)?;
+    let from_usb = address.is_none();
     let address = match address {
         Some(address) => validate(address).map_err(io::Error::other)?,
         None => usb_address(runner, serial)?,
     };
-    if connect(runner, &address, out)? != Connection::Connected {
+    let connection = if from_usb {
+        connect_after_usb(runner, &address, sleep, out)?
+    } else {
+        connect(runner, &address, out)?
+    };
+    if connection != Connection::Connected {
         return Err(io::Error::other("未建立 Wi-Fi 連線，設定未儲存"));
     }
     save(path, &address)?;
     writeln!(out, "已儲存 wifi_address = {address}")
+}
+
+/// tcpip 會重啟 adbd，TCP 監聽可能尚未就緒；僅 USB 切換最多嘗試三次，間隔一秒。
+/// 注入 sleep 讓測試能核對等待，不真的延遲；中斷立即停止，輸出錯誤往上傳。
+fn connect_after_usb(
+    runner: &dyn CommandRunner,
+    address: &str,
+    sleep: &mut dyn FnMut(Duration),
+    out: &mut dyn Write,
+) -> io::Result<Connection> {
+    for attempt in 0..3 {
+        if attempt > 0 {
+            sleep(Duration::from_secs(1));
+        }
+        let result = connect(runner, address, out)?;
+        if result != Connection::Failed {
+            return Ok(result);
+        }
+    }
+    Ok(Connection::Failed)
 }
 
 fn checked(runner: &dyn CommandRunner, args: &[&str]) -> io::Result<String> {
@@ -136,7 +170,7 @@ fn usb_address(runner: &dyn CommandRunner, serial: Option<&str>) -> io::Result<S
     }
     let selected = device::select(&devices, serial).map_err(io::Error::other)?;
     let serial = &selected.serial;
-    checked(runner, &["-s", serial, "tcpip", "5555"])?;
+    // 必須先讀 IP：tcpip 會重啟 adbd，緊接著用舊 USB transport 下 shell 可能得到 error: closed。
     let ip = checked(
         runner,
         &[
@@ -146,6 +180,7 @@ fn usb_address(runner: &dyn CommandRunner, serial: Option<&str>) -> io::Result<S
     let ip = wlan_ip(&ip).ok_or_else(|| {
         io::Error::other("讀不到手機 wlan0 的 IPv4 位址：請開啟 Wi-Fi 並連上與電腦相通的網路後重試")
     })?;
+    checked(runner, &["-s", serial, "tcpip", "5555"])?;
     Ok(format!("{ip}:5555"))
 }
 
@@ -223,12 +258,15 @@ mod tests {
     }
     #[test]
     fn pair_with_valid_address_returns_interactive_exit_code() {
-        assert_eq!(pair(&FakeRunner::new(&[]), "phone.local:37001").unwrap(), 7);
+        assert_eq!(
+            pair(&FakeRunner::new(&[]), "phone.local:37001", &mut Vec::new()).unwrap(),
+            7
+        );
     }
     #[test]
     fn pair_with_invalid_address_does_not_execute_adb() {
         let runner = FakeRunner::new(&[]);
-        assert!(pair(&runner, "-phone:5555").is_err());
+        assert!(pair(&runner, "-phone:5555", &mut Vec::new()).is_err());
         assert!(runner.calls.borrow().is_empty());
     }
     #[test]
@@ -305,6 +343,7 @@ mod tests {
             Some("phone:5555"),
             None,
             &path,
+            &mut |_| panic!("不應等待"),
             &mut Vec::new(),
         )
         .unwrap();
@@ -323,6 +362,7 @@ mod tests {
             Some("phone:5555"),
             None,
             &path,
+            &mut |_| panic!("不應等待"),
             &mut Vec::new(),
         )
         .unwrap();
@@ -341,6 +381,7 @@ mod tests {
                 Some("phone:5555"),
                 None,
                 &path,
+                &mut |_| panic!("不應等待"),
                 &mut Vec::new()
             )
             .is_err()
@@ -348,11 +389,28 @@ mod tests {
         assert!(!path.exists());
     }
     #[test]
-    fn usb_connect_switches_transport_reads_wlan_and_connects() {
+    fn usb_switch_reads_ip_before_restarting_adbd() {
+        let runner = FakeRunner::new(&[
+            ("USB device", Some(0)),
+            ("inet 192.168.1.20/24", Some(0)),
+            ("inet 192.168.1.20/24", Some(0)),
+        ]);
+        usb_address(&runner, None).unwrap();
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb devices -l",
+                "adb -s USB shell ip -f inet addr show wlan0",
+                "adb -s USB tcpip 5555",
+            ]
+        );
+    }
+    #[test]
+    fn usb_connect_reads_wlan_switches_transport_and_connects() {
         let runner = FakeRunner::new(&[
             ("USB device\nphone:5555 device\n", Some(0)),
-            ("restarting", Some(0)),
             ("inet 192.168.1.20/24 brd 192.168.1.255", Some(0)),
+            ("restarting", Some(0)),
             ("connected to 192.168.1.20:5555", Some(0)),
         ]);
         let dir = tempfile::tempdir().unwrap();
@@ -361,6 +419,7 @@ mod tests {
             None,
             None,
             &dir.path().join("config.toml"),
+            &mut |_| panic!("不應等待"),
             &mut Vec::new(),
         )
         .unwrap();
@@ -368,20 +427,27 @@ mod tests {
             *runner.calls.borrow(),
             [
                 "adb devices -l",
-                "adb -s USB tcpip 5555",
                 "adb -s USB shell ip -f inet addr show wlan0",
+                "adb -s USB tcpip 5555",
                 "adb connect 192.168.1.20:5555"
             ]
         );
     }
     #[test]
-    fn usb_without_wlan_ip_explains_wifi_requirement() {
-        let runner = FakeRunner::new(&[("USB device", Some(0)), ("", Some(0)), ("", Some(0))]);
+    fn usb_without_wlan_ip_explains_wifi_requirement_without_running_tcpip() {
+        let runner = FakeRunner::new(&[("USB device", Some(0)), ("", Some(0))]);
         assert!(
             usb_address(&runner, None)
                 .unwrap_err()
                 .to_string()
                 .contains("請開啟 Wi-Fi")
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb devices -l",
+                "adb -s USB shell ip -f inet addr show wlan0"
+            ]
         );
     }
     #[test]
@@ -408,13 +474,118 @@ mod tests {
     fn serial_selects_usb_device_before_switching() {
         let runner = FakeRunner::new(&[
             ("USB1 device\nUSB2 device", Some(0)),
-            ("", Some(0)),
             ("inet 192.168.1.20/24", Some(0)),
+            ("", Some(0)),
         ]);
         assert_eq!(
             usb_address(&runner, Some("USB2")).unwrap(),
             "192.168.1.20:5555"
         );
-        assert_eq!(runner.calls.borrow()[1], "adb -s USB2 tcpip 5555");
+        assert_eq!(
+            runner.calls.borrow()[1],
+            "adb -s USB2 shell ip -f inet addr show wlan0"
+        );
+    }
+    #[test]
+    fn pair_nonzero_exit_prints_recovery_hint() {
+        let mut out = Vec::new();
+        pair(&FakeRunner::new(&[]), "phone.local:37001", &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "配對失敗：請重新開啟手機的配對視窗，使用新的配對碼與埠號；執行 adb kill-server 後重試。Fedora／發行版 adb 有已知配對失敗（protocol fault (couldn't read status message)），可改用 Google 官方 platform-tools，或接 USB 執行 dex2pc connect 跳過配對。\n"
+        );
+    }
+
+    #[test]
+    fn usb_switch_retries_refused_connection_then_saves_after_success() {
+        let runner = FakeRunner::new(&[
+            ("USB device", Some(0)),
+            ("inet 192.168.1.20/24", Some(0)),
+            ("restarting", Some(0)),
+            ("failed to connect: connection refused", Some(0)),
+            ("connected to 192.168.1.20:5555", Some(0)),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut delays = Vec::new();
+        connect_and_save(
+            &runner,
+            None,
+            None,
+            &path,
+            &mut |delay| delays.push(delay),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb devices -l",
+                "adb -s USB shell ip -f inet addr show wlan0",
+                "adb -s USB tcpip 5555",
+                "adb connect 192.168.1.20:5555",
+                "adb connect 192.168.1.20:5555",
+            ]
+        );
+        assert_eq!(delays, [Duration::from_secs(1)]);
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "wifi_address = \"192.168.1.20:5555\"\n"
+        );
+    }
+
+    #[test]
+    fn usb_switch_gives_up_after_three_connect_attempts_without_saving() {
+        let runner = FakeRunner::new(&[
+            ("USB device", Some(0)),
+            ("inet 192.168.1.20/24", Some(0)),
+            ("restarting", Some(0)),
+            ("failed to connect", Some(0)),
+            ("connection refused", Some(1)),
+            ("connection refused", Some(1)),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut delays = Vec::new();
+        assert!(
+            connect_and_save(
+                &runner,
+                None,
+                None,
+                &path,
+                &mut |delay| delays.push(delay),
+                &mut Vec::new()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb devices -l",
+                "adb -s USB shell ip -f inet addr show wlan0",
+                "adb -s USB tcpip 5555",
+                "adb connect 192.168.1.20:5555",
+                "adb connect 192.168.1.20:5555",
+                "adb connect 192.168.1.20:5555",
+            ]
+        );
+        assert_eq!(delays, [Duration::from_secs(1), Duration::from_secs(1)]);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn usb_switch_interrupted_connect_does_not_retry() {
+        let runner = FakeRunner::new(&[("", None)]);
+        assert_eq!(
+            connect_after_usb(
+                &runner,
+                "phone:5555",
+                &mut |_| panic!("不應等待"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            Connection::Interrupted
+        );
+        assert_eq!(*runner.calls.borrow(), ["adb connect phone:5555"]);
     }
 }

@@ -86,7 +86,7 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
-        Command::Pair { address } => match wifi::pair(&SystemRunner, &address) {
+        Command::Pair { address } => match wifi::pair(&SystemRunner, &address, &mut io::stderr()) {
             Ok(code) => ExitCode::from(code),
             Err(err) => {
                 eprintln!("dex2pc: {err}");
@@ -231,6 +231,13 @@ fn install_desktop(uninstall: bool) -> Result<(), Box<dyn std::error::Error>> {
 /// 只在 adb 確認連線後才儲存位址；檔案或命令失敗時保留錯誤供 CLI 回報。
 fn connect(address: Option<&str>, serial: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
-    wifi::connect_and_save(&SystemRunner, address, serial, &path, &mut io::stdout())?;
+    wifi::connect_and_save(
+        &SystemRunner,
+        address,
+        serial,
+        &path,
+        &mut std::thread::sleep,
+        &mut io::stdout(),
+    )?;
     Ok(())
 }
