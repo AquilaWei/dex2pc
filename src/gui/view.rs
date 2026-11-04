@@ -1,4 +1,4 @@
-use super::{Action, App, Event, Mode, Quality, egui, io, pair, thread, worker};
+use super::{Action, App, Event, Mode, Quality, egui, pair, thread, worker};
 
 impl App {
     pub(super) fn panel(&mut self, ctx: &egui::Context) {
@@ -92,8 +92,12 @@ impl App {
 impl App {
     fn advanced(&mut self, ui: &mut egui::Ui) {
         ui.collapsing("進階：手動位址與配對", |ui| {
-            ui.label("連線 IP:埠");
-            ui.text_edit_singleline(&mut self.address);
+            ui.label("先配對，再連線");
+            ui.label("手機「無線偵錯」頁面上的「IP 位址和連接埠」");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.address)
+                    .hint_text("192.168.18.59:5555（或只填埠號）"),
+            );
             if ui
                 .add_enabled(
                     !self.busy && !self.model.session.running,
@@ -101,26 +105,13 @@ impl App {
                 )
                 .clicked()
             {
-                self.busy = true;
-                let address = self.address.clone();
-                let path = self.model.path.clone();
-                let tx = self.tx.clone();
-                thread::spawn(move || {
-                    let runner = worker::SessionRunner::new(tx.clone());
-                    let result = crate::wifi::connect_and_save(
-                        &runner,
-                        Some(&address),
-                        None,
-                        &path,
-                        &mut thread::sleep,
-                        &mut io::sink(),
-                    )
-                    .map(|()| address);
-                    let _ = tx.send(Event::Switched(result.map_err(|err| err.to_string())));
-                });
+                self.connect_phone();
             }
-            ui.label("配對 IP:埠（與連線埠不同）");
-            ui.text_edit_singleline(&mut self.pair_address);
+            ui.label("「使用配對碼配對裝置」視窗中的 IP:埠");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.pair_address)
+                    .hint_text("192.168.18.59:44517（或只填埠號）"),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut self.code)
                     .password(true)
@@ -133,16 +124,60 @@ impl App {
                 )
                 .clicked()
             {
-                self.busy = true;
-                let address = self.pair_address.clone();
-                let code = std::mem::take(&mut self.code);
-                let tx = self.tx.clone();
-                thread::spawn(move || {
-                    let runner = worker::SessionRunner::new(tx.clone());
-                    let result = pair(&runner, &address, &code);
-                    let _ = tx.send(Event::Paired(result));
-                });
+                self.pair_phone();
             }
+        });
+    }
+    fn connect_phone(&mut self) {
+        let address = match super::input::address(
+            &self.address,
+            &self.pair_address,
+            self.model.options.wifi_address.as_deref(),
+        ) {
+            Ok(address) => address,
+            Err(err) => {
+                self.model.fail(err);
+                return;
+            }
+        };
+        self.address.clone_from(&address);
+        self.busy = true;
+        let path = self.model.path.clone();
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let runner = worker::SessionRunner::new(tx.clone());
+            let result = crate::wifi::connect_and_save(
+                &runner,
+                Some(&address),
+                None,
+                &path,
+                &mut thread::sleep,
+                &mut worker::Messages::new(tx.clone()),
+            )
+            .map(|()| address);
+            let _ = tx.send(Event::Switched(result.map_err(|err| err.to_string())));
+        });
+    }
+    fn pair_phone(&mut self) {
+        let address = match super::input::address(
+            &self.pair_address,
+            &self.address,
+            self.model.options.wifi_address.as_deref(),
+        ) {
+            Ok(address) => address,
+            Err(err) => {
+                self.model.fail(err);
+                return;
+            }
+        };
+        self.pair_address.clone_from(&address);
+        self.busy = true;
+        let code = std::mem::take(&mut self.code);
+        let tx = self.tx.clone();
+        thread::spawn(move || {
+            let runner = worker::SessionRunner::new(tx.clone());
+            let result = pair(&runner, &address, &code);
+            let _ = tx.send(Event::Paired(result));
         });
     }
     fn connection(&mut self, ui: &mut egui::Ui) {

@@ -13,6 +13,9 @@ const FAILURE: u8 = 1;
 /// scrcpy 在連線建立後裝置才斷開時的 exit code（見 scrcpy man page 的 Exit status）。
 const SCRCPY_DISCONNECTED: i32 = 2;
 
+/// GUI 重連與連線探測共用三次失敗上限；CLI 的 Watch 上限保持不變。
+pub(crate) const WIFI_MAX_FAILURES: u32 = 3;
+
 /// `--watch` 的重連策略。
 pub struct Watch {
     /// 斷線後連續幾次重新啟動失敗就放棄；成功連上（之後又斷線）會把計數歸零。
@@ -182,7 +185,23 @@ fn reconnect(
         }
         sleep(delay);
         writeln!(out, "裝置已重新連接，重新啟動 scrcpy")?;
-        return launch_wifi(runner, args, serial, &Watchdog::default(), sleep, out);
+        let mut healthy = false;
+        let outcome = launch_wifi_checked(
+            runner,
+            args,
+            serial,
+            &Watchdog::default(),
+            sleep,
+            out,
+            &mut healthy,
+        )?;
+        // A reconnect that never passes a probe is still a failed attempt.
+        // Treating it as a recovered connection resets the budget forever.
+        return Ok(if matches!(outcome, Outcome::Disconnected) && !healthy {
+            Outcome::Failed(2)
+        } else {
+            outcome
+        });
     }
     match runner.run("adb", &["-s", serial, "wait-for-device"]) {
         Ok(output) if output.success() => {}
@@ -250,7 +269,7 @@ impl Default for Watchdog {
         Self {
             interval: Duration::from_secs(5),
             timeout: Duration::from_secs(5),
-            max_failures: 3,
+            max_failures: WIFI_MAX_FAILURES,
         }
     }
 }
@@ -264,6 +283,18 @@ fn launch_wifi(
     policy: &Watchdog,
     sleep: &mut dyn FnMut(Duration),
     out: &mut dyn Write,
+) -> io::Result<Outcome> {
+    launch_wifi_checked(runner, args, address, policy, sleep, out, &mut false)
+}
+
+fn launch_wifi_checked(
+    runner: &dyn CommandRunner,
+    args: &[&str],
+    address: &str,
+    policy: &Watchdog,
+    sleep: &mut dyn FnMut(Duration),
+    out: &mut dyn Write,
+    healthy: &mut bool,
 ) -> io::Result<Outcome> {
     let mut child = match runner.spawn("scrcpy", args) {
         Ok(child) => child,
@@ -289,7 +320,10 @@ fn launch_wifi(
                 child.kill()?;
                 return Ok(Outcome::Interrupted);
             }
-            Ok(TimedOutput::Exited(output)) if output.success() => failures = 0,
+            Ok(TimedOutput::Exited(output)) if output.success() => {
+                failures = 0;
+                *healthy = true;
+            }
             _ => failures += 1,
         }
         probe_elapsed = probe_started.elapsed();
@@ -1289,6 +1323,34 @@ mod watchdog_tests {
         let (runner, killed) = Fake::new(&[Exited(Some(2))], vec![]);
         assert!(matches!(launch_fake(&runner), Outcome::Disconnected));
         assert!(!killed.get());
+    }
+    #[test]
+    fn unhealthy_wifi_reconnects_stop_after_three_attempts() {
+        let (runner, _) = Fake::new(&[Exited(Some(2))], vec![]);
+        runner.children.borrow_mut().push_back(Child {
+            polls: VecDeque::from([Exited(Some(2))]),
+            killed: Rc::new(Cell::new(false)),
+        });
+        runner.children.borrow_mut().push_back(Child {
+            polls: VecDeque::from([Exited(Some(2))]),
+            killed: Rc::new(Cell::new(false)),
+        });
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch {
+                    max_failures: 3,
+                    retry_delay: Duration::ZERO
+                },
+                Outcome::Disconnected,
+                &mut |_| {},
+                &mut Vec::new(),
+            )
+            .unwrap(),
+            1
+        );
     }
     #[test]
     fn watchdog_without_watch_returns_disconnected_code_two() {
