@@ -9,7 +9,7 @@ use clap::Args;
 use crate::scrcpy::{Dpi, InputMode, Options, Resolution};
 
 /// 設定檔中可用的欄位；出現其他欄位就報錯，避免打錯字的設定被默默忽略。
-const FIELDS: [&str; 7] = [
+const FIELDS: [&str; 8] = [
     "resolution",
     "dpi",
     "video_bit_rate",
@@ -17,6 +17,7 @@ const FIELDS: [&str; 7] = [
     "keyboard",
     "mouse",
     "window_title",
+    "wifi_address",
 ];
 
 /// 算出設定檔位置：`$XDG_CONFIG_HOME/dex2pc/config.toml`，沒設時用 `$HOME/.config/dex2pc/config.toml`。
@@ -116,6 +117,13 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
                 } else {
                     options.mouse = Some(mode);
                 }
+            }
+            "wifi_address" => {
+                let address = value
+                    .as_str()
+                    .ok_or_else(|| invalid("要是字串".to_string()))?;
+                crate::wifi::validate(address).map_err(invalid)?;
+                options.wifi_address = Some(address.to_string());
             }
             "window_title" => {
                 options.window_title = value
@@ -533,7 +541,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "設定檔 /xdg/dex2pc/config.toml 有未知欄位 resolutoin；\
-             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title"
+             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address"
         );
     }
 
