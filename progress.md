@@ -243,3 +243,9 @@ F11 共用基礎 → （rpm 軌道與 deb 軌道平行，見下方「平行執�
   - CI 警告：`actions/checkout@v4`、`upload-artifact@v4`、`download-artifact@v4` 用 Node 20（已被強制改跑 Node 24）；`ubuntu-latest` 2026-10-19 起改成 Ubuntu 26。
 
 - F6 完成（2026-10-11）：使用者確認「F6 完成了」。README 實機驗收清單的安裝包四項（安裝、選單捷徑、點擊開出視窗、移除；Fedora rpm、Debian 13 deb、Ubuntu 26.04 deb）與選單捷徑項目打勾，開頭的「捷徑尚未驗收」改為已驗收；`tests/docs.rs` 的清單測試改成要求已勾選；`feature_list.json` F6 `passes: true`。全部功能完成。
+
+- F12（Wi-Fi 無線 adb，0.3.1 測試版）：新增 pair、connect（含 USB tcpip 5555 切換）、start --wifi、wifi_address 設定及 Wi-Fi watch 重連。架構保持 doctor → scrcpy --new-display，外部命令透過 CommandRunner，pair 繼承終端。
+  - 位址接受 IPv4 或 ASCII DNS 主機名與 1–65535 埠，不支援 IPv6；--wifi 與 --serial 互斥。連線必須 adb 成功且輸出包含 connected to 才儲存設定，保留其他 TOML 欄位。
+  - 自動化：fake runner 驗證連線、失敗、USB 切換、啟動順序及 watch；CLI 驗證 clap、設定錯誤與無外部命令的 dry-run。
+  - 實機待驗收（維持 passes: false）：配對碼互動、USB 切換後拔線、無線 DeX 鍵鼠操作、Wi-Fi 斷線後 --watch 重連與 Ctrl+C。
+  - 不建立 tag、不推送、不發佈或打包。

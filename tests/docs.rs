@@ -325,3 +325,21 @@ fn readme_real_host_checklist_covers_each_package_on_each_distro_with_checked_it
         );
     }
 }
+
+#[test]
+fn readme_wireless_section_explains_pair_connect_and_start() {
+    let wireless = section(README, "\n## 無線投影\n");
+    assert!(wireless.contains("dex2pc pair 192.168.1.20:37001"));
+    assert!(wireless.contains("dex2pc connect 192.168.1.20:39501"));
+    assert!(wireless.contains("dex2pc start --wifi"));
+    assert!(wireless.contains("手機不會主動搜尋到電腦"));
+    assert!(wireless.contains("--video-bit-rate 4M"));
+}
+#[test]
+fn readme_keeps_wireless_hardware_acceptance_unchecked() {
+    let checklist = section(README, "\n## 實機驗收清單\n");
+    assert!(checklist.contains("- [ ] 無線偵錯配對"));
+    assert!(checklist.contains("- [ ] USB 切換"));
+    assert!(checklist.contains("- [ ] 拔除 USB 後"));
+    assert!(checklist.contains("- [ ] Wi-Fi 斷線後"));
+}

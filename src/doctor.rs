@@ -124,6 +124,9 @@ fn check_device(
 
 /// 印出 `serial` 那台實際協商到的 USB 速度，低於 USB 2.0 時警告線材或 hub 可能有問題。
 fn report_usb_speed(sysfs_root: &Path, serial: &str, out: &mut dyn Write) -> io::Result<()> {
+    if crate::wifi::validate(serial).is_ok() {
+        return writeln!(out, "連線：Wi-Fi（{serial}）");
+    }
     match usb::find_speed(sysfs_root, serial) {
         Ok(Some(mbps)) if mbps < usb::MIN_MBPS => writeln!(
             out,
@@ -487,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn doctor_with_serial_missing_from_sysfs_reports_unknown_speed_and_succeeds() {
+    fn doctor_with_network_serial_reports_wifi_and_succeeds() {
         let sysfs = sysfs_with_speed("5000\n");
 
         let (ok, out) = doctor_with_sysfs(
@@ -498,7 +501,20 @@ mod tests {
         );
 
         assert!(ok);
-        assert!(out.contains("裝置：192.168.1.5:5555（SM_S918B）\n連線：無法判斷 USB 速度\n"));
+        assert!(
+            out.contains("裝置：192.168.1.5:5555（SM_S918B）\n連線：Wi-Fi（192.168.1.5:5555）\n")
+        );
+    }
+
+    #[test]
+    fn network_serial_does_not_read_invalid_sysfs_root() {
+        let root = tempfile::NamedTempFile::new().unwrap();
+        let mut out = Vec::new();
+        report_usb_speed(root.path(), "phone.local:5555", &mut out).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "連線：Wi-Fi（phone.local:5555）\n"
+        );
     }
 
     #[test]
