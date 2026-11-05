@@ -80,6 +80,8 @@ pub fn run(
         writeln!(out, "環境未就緒，未啟動 scrcpy；請依上面的訊息處理後再執行")?;
         return Ok(FAILURE);
     };
+    let projection = crate::freeform::Projection::new(runner, &selected, options.freeform);
+    let runner: &dyn CommandRunner = &projection;
     let args = scrcpy::build_args(options, Some(&selected));
     writeln!(out, "啟動：{}", command_line(&args))?;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -224,7 +226,7 @@ fn reconnect(
 /// 執行一次 scrcpy 並等它結束；失敗時印出原因。
 fn launch(runner: &dyn CommandRunner, args: &[&str], out: &mut dyn Write) -> io::Result<Outcome> {
     // scrcpy 的輸出被收集起來，結束後才看得到；失敗時才印，正常關閉視窗時不印
-    let output = match runner.run("scrcpy", args) {
+    let output = match runner.run_projection(args, out) {
         Ok(output) => output,
         Err(err) => {
             writeln!(out, "無法執行 scrcpy：{err}")?;
@@ -296,7 +298,7 @@ fn launch_wifi_checked(
     out: &mut dyn Write,
     healthy: &mut bool,
 ) -> io::Result<Outcome> {
-    let mut child = match runner.spawn("scrcpy", args) {
+    let mut child = match runner.spawn_projection(args, out) {
         Ok(child) => child,
         Err(err) => {
             writeln!(out, "無法執行 scrcpy：{err}")?;
@@ -348,7 +350,23 @@ pub fn dry_run(options: &Options, serial: Option<&str>, out: &mut dyn Write) -> 
         out,
         "{}",
         command_line(&scrcpy::build_args(options, serial))
-    )
+    )?;
+    if options.freeform {
+        writeln!(
+            out,
+            "# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行："
+        )?;
+        writeln!(
+            out,
+            "# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）"
+        )?;
+    } else {
+        writeln!(
+            out,
+            "# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；失敗時警告並繼續投影。"
+        )?;
+    }
+    Ok(())
 }
 
 /// 把 `scrcpy` 與參數組成可以直接貼到 shell 執行的一行；含空白等特殊字元的參數加單引號。
@@ -494,7 +512,7 @@ mod tests {
 
         let (_, out) = start(&runner, &Options::default());
 
-        assert!(out.ends_with(
+        assert!(out.contains(
             "啟動：scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
         ));
     }
@@ -813,7 +831,7 @@ mod tests {
 
         let (_, out) = watch(&runner);
 
-        assert!(out.ends_with(
+        assert!(out.contains(
             "scrcpy 以 exit code 2 結束：\nERROR: device disconnected\n\
              裝置已斷線，等待重新連接（按 Ctrl+C 結束）\n\
              裝置已重新連接，重新啟動 scrcpy\n"
@@ -847,7 +865,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
         );
     }
 
@@ -859,7 +877,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
         );
     }
 

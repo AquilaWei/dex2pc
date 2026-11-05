@@ -154,6 +154,8 @@ pub struct Options {
     /// 例如 `16M`；`None` 時不加參數，沿用 scrcpy 預設（8M）。原樣傳給 scrcpy，由它檢查格式。
     pub video_bit_rate: Option<String>,
     pub audio: bool,
+    /// 只對新建的 scrcpy 顯示器套用自由視窗；手機不支援時警告並繼續投影。
+    pub freeform: bool,
     /// `None` 時不加參數，沿用 scrcpy 預設（sdk）。
     pub keyboard: Option<InputMode>,
     /// `None` 時不加參數，沿用 scrcpy 預設。
@@ -179,6 +181,7 @@ impl Default for Options {
             language: None,
             video_bit_rate: None,
             audio: true,
+            freeform: true,
             keyboard: Some(InputMode::Uhid),
             mouse: None,
         }
@@ -362,6 +365,7 @@ mod tests {
             window_title: "DeX".to_string(),
             video_bit_rate: Some("20M".to_string()),
             audio: false,
+            freeform: true,
             keyboard: Some(InputMode::Aoa),
             mouse: Some(InputMode::Sdk),
             wifi_address: None,
