@@ -1,8 +1,10 @@
+mod controller;
 mod fonts;
 mod input;
 mod ipc;
 mod tray;
 mod view;
+mod wireless;
 mod worker;
 
 use crate::preferences::{Mode, Quality};
@@ -61,6 +63,7 @@ enum Event {
     Paired(Result<(), String>),
     TrayLost,
     Environment(Vec<String>),
+    Wireless(controller::WirelessEvent),
 }
 
 /// UI 的狀態機只處理資料與動作；背景工作、工具列與 IPC 都以 channel 送事件。
@@ -162,7 +165,17 @@ impl Model {
     }
 }
 
+fn visibility_command(visible: bool, last: &mut Option<bool>) -> Option<bool> {
+    // Avoid asking the compositor to remap an unchanged window on every repaint.
+    if *last == Some(visible) {
+        return None;
+    }
+    *last = Some(visible);
+    Some(visible)
+}
+
 struct App {
+    last_visibility: Option<bool>,
     model: Model,
     events: Receiver<Event>,
     tx: Sender<Event>,
@@ -180,6 +193,7 @@ struct App {
     environment_done: bool,
     load_error: Option<String>,
     font_notice: Option<&'static str>,
+    interface: controller::Interface,
 }
 impl App {
     fn action(&mut self, action: Action) {
@@ -204,9 +218,16 @@ impl App {
                 self.model.session.running = true;
                 self.model.session.stopping = false;
                 self.model.status = Status::Connecting;
-                worker::session(self.tx.clone(), self.model.options.clone());
+                if self.model.options.mode == Some(Mode::Wifi) && !self.interface.manual {
+                    self.auto_connect();
+                } else {
+                    worker::session(self.tx.clone(), self.model.options.clone());
+                }
             }
             Action::Stop | Action::Quit => {
+                if let Some(cancel) = &self.interface.cancel {
+                    let _ = cancel.send(());
+                }
                 for tx in &self.command {
                     let _ = tx.send(());
                 }
@@ -270,6 +291,9 @@ impl App {
                         self.model.session.stopping = false;
                     }
                     self.checked = result.is_ok();
+                    if let Ok(name) = &result {
+                        self.interface.device_name.clone_from(name);
+                    }
                     if let Err(err) = result {
                         self.model.fail(err);
                     }
@@ -312,6 +336,7 @@ impl App {
                     self.environment_done = true;
                     self.busy = false;
                 }
+                Event::Wireless(event) => self.wireless_event(event),
                 Event::TrayLost => {
                     self.model.tray = false;
                     self.tray = None;
@@ -319,6 +344,15 @@ impl App {
                 }
             }
         }
+        self.update_tray();
+        if let Some(visible) = visibility_command(self.model.visible, &mut self.last_visibility) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(visible));
+        }
+        if self.model.session.quitting && !self.model.session.running && !self.busy {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+    fn update_tray(&self) {
         if let Some(handle) = &self.tray {
             let mode = self.model.options.mode.unwrap_or_default();
             let quality = self.model.options.quality.unwrap_or_default();
@@ -329,16 +363,16 @@ impl App {
                 tray.status = status;
             });
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.model.visible));
-        if self.model.session.quitting && !self.model.session.running && !self.busy {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
     }
     fn connected(&mut self, address: String) {
         self.wifi_fields = input::WifiFields::from_saved(Some(&address));
         self.address.clone_from(&address);
         self.model.options.wifi_address = Some(address);
         self.model.options.mode = Some(Mode::Wifi);
+        self.model
+            .options
+            .quality
+            .get_or_insert_with(Quality::default);
         self.model.status = Status::Idle;
         self.model.error = None;
         self.model.save();
@@ -371,7 +405,12 @@ impl App {
                     .filter(|d| !d.serial.contains(':'))
                     .collect();
                 device::select(&devices, None)
-                    .map(|device| device.serial.clone())
+                    .map(|device| {
+                        device
+                            .model
+                            .clone()
+                            .unwrap_or_else(|| device.serial.clone())
+                    })
                     .map_err(io::Error::other)
             });
             let _ = tx.send(Event::Checked(result.map_err(|err| err.to_string())));
@@ -390,6 +429,7 @@ impl eframe::App for App {
             }
         }
         if self.model.visible
+            && !matches!(self.interface.screen, controller::Screen::Choices)
             && !self.model.session.running
             && !self.busy
             && self.environment_done
@@ -487,8 +527,10 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     .spawn()
     .ok();
     let address = model.options.wifi_address.clone().unwrap_or_default();
+    let interface = controller::Interface::load(&model.path, &model.options)?;
     let wifi_fields = input::WifiFields::from_saved(Some(&address));
     let mut app = App {
+        last_visibility: None,
         model,
         events,
         tx,
@@ -506,15 +548,20 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         environment_done: false,
         load_error: None,
         font_notice: None,
+        interface,
     };
     app.load_error.clone_from(&app.model.error);
     app.environment();
     app.model.tray = app.tray.is_some();
     app.model.visible |= !app.model.tray;
     let visible = app.model.visible;
+    app.last_visibility = Some(visible);
     eframe::run_native(
         "dex2pc 設定",
         eframe::NativeOptions {
+            // Mesa's Wayland EGL swap can wait indefinitely for vblank. The UI
+            // already schedules idle repaints every 100 ms, so it need not block here.
+            vsync: false,
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([420.0, 520.0])
                 .with_visible(visible),
@@ -702,6 +749,7 @@ mod tests {
         let instance = ipc::acquire(dir.path(), tx.clone()).unwrap().unwrap();
         (
             App {
+                last_visibility: Some(true),
                 model: Model::new(dir.path().join("config.toml"), Ok(None)),
                 events,
                 tx,
@@ -719,9 +767,57 @@ mod tests {
                 environment_done: false,
                 load_error: None,
                 font_notice: None,
+                interface: controller::Interface::default(),
             },
             dir,
         )
+    }
+    #[test]
+    fn failed_discovery_exposes_manual_fallback() {
+        let (mut app, _dir) = headless_app();
+        app.model.session.running = true;
+        app.wireless_event(controller::WirelessEvent::Connected(Err(
+            wireless::NOT_FOUND.into(),
+        )));
+        assert!(app.interface.fallback);
+    }
+    #[test]
+    fn unchanged_visible_window_does_not_request_remapping() {
+        assert_eq!(visibility_command(true, &mut Some(true)), None);
+    }
+    #[test]
+    fn first_run_model_is_visible() {
+        assert!(Model::new(PathBuf::from("/tmp/example/config.toml"), Ok(None)).visible);
+    }
+    #[test]
+    fn closing_to_tray_requests_hiding() {
+        assert_eq!(visibility_command(false, &mut Some(true)), Some(false));
+    }
+    #[test]
+    fn showing_from_tray_requests_mapping() {
+        assert_eq!(visibility_command(true, &mut Some(false)), Some(true));
+    }
+    #[test]
+    fn failed_discovery_finishes_the_session() {
+        let (mut app, _dir) = headless_app();
+        app.model.session.running = true;
+        app.wireless_event(controller::WirelessEvent::Connected(Err(
+            wireless::NOT_FOUND.into(),
+        )));
+        assert_eq!(
+            (app.model.session.running, app.model.status),
+            (false, Status::Error)
+        );
+    }
+    #[test]
+    fn stopped_discovery_does_not_show_an_error() {
+        let (mut app, _dir) = headless_app();
+        app.model.session.running = true;
+        app.model.session.stopping = true;
+        app.wireless_event(controller::WirelessEvent::Connected(Err(
+            "已停止連線".into()
+        )));
+        assert_eq!((app.model.status, app.model.error), (Status::Idle, None));
     }
     #[test]
     fn stop_kills_scrcpy_even_when_probe_is_latest_command() {

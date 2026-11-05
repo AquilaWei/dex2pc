@@ -1,4 +1,16 @@
+use super::controller::{self, Screen};
 use super::{Action, App, Event, Mode, Quality, Status, egui, input, pair, thread, worker};
+
+fn card(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .corner_radius(20)
+        .inner_margin(20)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            contents(ui);
+        });
+}
 
 fn primary_label(status: Status) -> &'static str {
     match status {
@@ -25,39 +37,142 @@ impl App {
                 if let Some(notice) = self.font_notice {
                     ui.label(notice);
                 }
-                ui.add_space(8.0);
+                ui.add_space(16.0);
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("●")
-                            .size(26.0)
-                            .color(status_color(self.model.status)),
-                    );
-                    ui.heading(egui::RichText::new(self.model.status.label()).size(28.0));
+                    ui.heading(egui::RichText::new("DeX").size(36.0).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("⚙ 設定").clicked() {
+                            self.interface.screen =
+                                if matches!(self.interface.screen, Screen::Settings) {
+                                    Screen::Main
+                                } else {
+                                    Screen::Settings
+                                };
+                        }
+                    });
                 });
-                self.mode_toggle(ui);
-                let running = self.model.session.running || self.busy;
-                let label = if running {
-                    "停止"
-                } else {
-                    primary_label(self.model.status)
-                };
-                if ui
-                    .add_enabled(
-                        running || (self.environment_done && self.install.is_empty()),
-                        egui::Button::new(egui::RichText::new(label).size(20.0))
-                            .min_size(egui::vec2(ui.available_width(), 48.0)),
-                    )
-                    .clicked()
-                {
-                    self.action(if running { Action::Stop } else { Action::Start });
+                ui.add_space(12.0);
+                match self.interface.screen {
+                    Screen::Choices => self.choices(ui),
+                    Screen::Main => self.main_screen(ui),
+                    Screen::Settings => self.secondary(ui),
                 }
-                self.errors(ui);
-                if self.model.options.mode == Some(Mode::Wifi) {
-                    ui.add_enabled_ui(!running, |ui| self.wifi(ui));
-                }
-                self.secondary(ui, ctx);
+                self.install_hints(ui, ctx);
             });
         });
+    }
+
+    fn choices(&mut self, ui: &mut egui::Ui) {
+        ui.label(egui::RichText::new("讓手機，成為你的桌面。").size(22.0));
+        ui.weak("選擇連線方式，完成一次設定後即可一鍵開啟。");
+        for (mode, title) in [
+            (Mode::Wifi, "無線連線\n掃描 QR 圖碼，輕鬆配對"),
+            (Mode::Usb, "USB 連線\n接上傳輸線，允許 USB 偵錯"),
+        ] {
+            if ui
+                .add_enabled(
+                    !self.busy && self.install.is_empty(),
+                    egui::Button::new(egui::RichText::new(title).size(19.0))
+                        .corner_radius(18)
+                        .min_size(egui::vec2(ui.available_width(), 100.0)),
+                )
+                .clicked()
+            {
+                self.select_setup(mode);
+            }
+        }
+        self.errors(ui);
+    }
+
+    fn main_screen(&mut self, ui: &mut egui::Ui) {
+        if self.interface.pairing.is_some() {
+            self.pairing_screen(ui);
+            return;
+        }
+        card(ui, |ui| {
+            let name = if self.interface.device_name.is_empty() {
+                "你的 Android 手機"
+            } else {
+                &self.interface.device_name
+            };
+            ui.label(egui::RichText::new(name).size(24.0).strong());
+            ui.weak(if self.model.options.mode == Some(Mode::Wifi) {
+                "Wi-Fi · 無線連線"
+            } else {
+                "USB · 有線連線"
+            });
+            ui.horizontal(|ui| {
+                ui.colored_label(status_color(self.model.status), "●");
+                ui.label(self.model.status.label());
+            });
+            self.errors(ui);
+            if self.interface.fallback {
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("重新掃描").clicked() {
+                        self.interface.manual = false;
+                        self.action(Action::Start);
+                    }
+                    if ui.button("手動輸入埠號").clicked() {
+                        self.interface.manual = true;
+                    }
+                });
+            }
+        });
+        ui.add_space(12.0);
+        let running = self.model.session.running || self.busy;
+        let label = if running {
+            "停止"
+        } else {
+            primary_label(self.model.status)
+        };
+        if ui
+            .add_enabled(
+                running || (self.environment_done && self.install.is_empty()),
+                egui::Button::new(
+                    egui::RichText::new(label)
+                        .size(21.0)
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(egui::Color32::from_rgb(0, 122, 255))
+                .corner_radius(30)
+                .min_size(egui::vec2(ui.available_width(), 58.0)),
+            )
+            .clicked()
+        {
+            self.action(if running { Action::Stop } else { Action::Start });
+        }
+        if self.interface.manual && self.model.options.mode == Some(Mode::Wifi) {
+            ui.add_enabled_ui(!running, |ui| self.wifi(ui));
+        } else {
+            ui.weak("設定會自動儲存，下次直接開啟 DeX。");
+        }
+    }
+
+    fn pairing_screen(&mut self, ui: &mut egui::Ui) {
+        card(ui, |ui| {
+            ui.heading("掃描，開始無線連線");
+            ui.label("開發人員選項 → 無線偵錯 → 使用 QR 圖碼配對裝置");
+            if let Some(pairing) = &self.interface.pairing {
+                controller::draw_qr(ui, pairing);
+            }
+            ui.weak(if self.busy {
+                "等待手機掃描…"
+            } else {
+                "掃描已結束，請重新產生 QR 圖碼。"
+            });
+            self.errors(ui);
+        });
+        if self.busy {
+            if ui.button("停止配對").clicked() {
+                self.action(Action::Stop);
+            }
+        } else if ui.button("重新配對").clicked() {
+            self.begin_qr();
+        }
+        if !self.busy && ui.button("改用六位配對碼").clicked() {
+            self.interface.pairing = None;
+            self.interface.manual = true;
+        }
     }
 
     fn mode_toggle(&mut self, ui: &mut egui::Ui) {
@@ -153,7 +268,7 @@ impl App {
         });
     }
 
-    fn secondary(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn install_hints(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         for command in &self.install {
             ui.horizontal_wrapped(|ui| {
                 ui.label(command);
@@ -169,7 +284,26 @@ impl App {
         {
             self.environment();
         }
-        ui.collapsing("設定", |ui| {
+    }
+
+    fn secondary(&mut self, ui: &mut egui::Ui) {
+        card(ui, |ui| {
+            ui.heading("設定");
+            self.mode_toggle(ui);
+            if ui
+                .add_enabled(
+                    !self.busy && !self.model.session.running,
+                    egui::Button::new("重新配對（QR 圖碼）"),
+                )
+                .clicked()
+            {
+                self.model.options.mode = Some(Mode::Wifi);
+                self.begin_qr();
+            }
+            if ui.button("手動輸入埠號").clicked() {
+                self.interface.manual = true;
+                self.interface.screen = Screen::Main;
+            }
             if ui
                 .add_enabled(
                     !self.busy && !self.model.session.running,
