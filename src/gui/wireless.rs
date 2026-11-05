@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use crate::runner::{CommandRunner, TimedOutput};
 
-pub(super) const NOT_FOUND: &str = "找不到手機的無線偵錯服務。請確認手機與電腦在同一 Wi-Fi、手機已開啟「無線偵錯」且已配對；再按「重新掃描」，或選「手動輸入埠號」。";
+pub(super) const NOT_FOUND: &str = super::text::get(
+    crate::preferences::Language::ZhTw,
+    super::text::Key::NotFound,
+);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
@@ -89,8 +92,12 @@ impl Pairing {
         std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
         let name = format!("studio-{}", hex(&bytes[..8]));
         let password = hex(&bytes[8..]);
-        let qr = qrcode::QrCode::new(payload(&name, &password))
-            .map_err(|_| io::Error::other("無法建立配對 QR 圖碼"))?;
+        let qr = qrcode::QrCode::new(payload(&name, &password)).map_err(|_| {
+            io::Error::other(super::text::get(
+                crate::preferences::Language::ZhTw,
+                super::text::Key::QrFailed,
+            ))
+        })?;
         Ok(Self { name, password, qr })
     }
     pub fn password(&self) -> String {
@@ -109,7 +116,11 @@ fn hex(bytes: &[u8]) -> String {
 pub(super) fn services(runner: &dyn CommandRunner) -> Result<Vec<Service>, String> {
     match runner.run_timeout("adb", &["mdns", "services"], Duration::from_secs(2)) {
         Ok(TimedOutput::Exited(output)) if output.success() => Ok(parse(&output.stdout)),
-        _ => Err("無法掃描 mDNS；請確認 adb 支援 mDNS，或選「手動輸入埠號」。".into()),
+        _ => Err(super::text::get(
+            crate::preferences::Language::ZhTw,
+            super::text::Key::ScanFailed,
+        )
+        .into()),
     }
 }
 
@@ -123,13 +134,13 @@ pub(super) fn discover(
 ) -> Result<Service, String> {
     for attempt in 0..attempts {
         if cancel.try_recv().is_ok() {
-            return Err("已停止掃描".into());
+            return Err(super::text::zh(super::text::Key::Cancelled).into());
         }
         if let Some(service) = select(&services(runner)?) {
             return Ok(service);
         }
         if attempt + 1 < attempts && cancel.recv_timeout(Duration::from_millis(500)).is_ok() {
-            return Err("已停止掃描".into());
+            return Err(super::text::zh(super::text::Key::Cancelled).into());
         }
     }
     Err(NOT_FOUND.into())
@@ -147,7 +158,11 @@ pub(super) fn pair_qr(
         {
             Ok(())
         }
-        _ => Err("QR 配對失敗，請重新配對，或改用六位配對碼。".into()),
+        _ => Err(super::text::get(
+            crate::preferences::Language::ZhTw,
+            super::text::Key::PairFailed,
+        )
+        .into()),
     }
 }
 
@@ -220,9 +235,9 @@ mod tests {
         );
     }
     #[test]
-    fn empty_scan_shows_manual_fallback() {
+    fn empty_scan_shows_rescan_and_repair_fallback() {
         let (_tx, rx) = std::sync::mpsc::channel();
-        assert_eq!(discover(&Fake("List of discovered mdns services\n"), &rx, 1, |s| choose(s, None, None)), Err("找不到手機的無線偵錯服務。請確認手機與電腦在同一 Wi-Fi、手機已開啟「無線偵錯」且已配對；再按「重新掃描」，或選「手動輸入埠號」。".into()));
+        assert_eq!(discover(&Fake("List of discovered mdns services\n"), &rx, 1, |s| choose(s, None, None)), Err("找不到手機的無線偵錯服務。請確認手機與電腦在同一 Wi-Fi，並開啟手機的無線偵錯；再重新掃描或重新配對。".into()));
     }
     #[test]
     fn new_config_shows_choices() {
@@ -274,7 +289,7 @@ mod tests {
         }
         assert_eq!(
             pair_qr(&Echo, "192.168.18.59:44517", "private-test-value"),
-            Err("QR 配對失敗，請重新配對，或改用六位配對碼。".into())
+            Err("QR 配對失敗，請在手機重新開啟 QR 掃描並重新配對。".into())
         );
     }
     #[test]

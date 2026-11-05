@@ -2,12 +2,13 @@ mod controller;
 mod fonts;
 mod input;
 mod ipc;
+mod text;
 mod tray;
 mod view;
 mod wireless;
 mod worker;
 
-use crate::preferences::{Mode, Quality};
+use crate::preferences::{Language, Mode, Quality};
 use crate::runner::CommandRunner;
 use crate::{config, device, scrcpy::Options};
 use eframe::egui;
@@ -26,14 +27,6 @@ enum Status {
     Error,
 }
 impl Status {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Idle => "未連線",
-            Self::Connecting => "連線中",
-            Self::Projecting => "投影中",
-            Self::Error => "錯誤",
-        }
-    }
     fn icon(self) -> &'static str {
         match self {
             Self::Idle => "idle",
@@ -47,9 +40,9 @@ impl Status {
 enum Action {
     Start,
     Stop,
-    Mode(Mode),
     Quality(Quality),
-    SwitchWifi,
+    Language(Language),
+    Clear,
     Show,
     Quit,
 }
@@ -59,11 +52,11 @@ enum Event {
     Log(String),
     Finished(Status, Option<String>),
     Checked(Result<String, String>),
-    Switched(Result<String, String>),
-    Paired(Result<(), String>),
     TrayLost,
     Environment(Vec<String>),
     Wireless(controller::WirelessEvent),
+    Cleared(Result<(), String>),
+    LaunchSession,
 }
 
 /// UI 的狀態機只處理資料與動作；背景工作、工具列與 IPC 都以 channel 送事件。
@@ -89,15 +82,12 @@ impl Model {
             Ok(options) => (options.unwrap_or_default(), None),
             Err(err) => (Options::default(), Some(err)),
         };
-        let configured = options.mode.is_some()
-            && options.quality.is_some()
-            && (options.mode != Some(Mode::Wifi) || options.wifi_address.is_some());
         Self {
             options,
             path,
             status: Status::Idle,
             session: Lifecycle::default(),
-            visible: !configured,
+            visible: true,
             tray: false,
             error,
             log: String::new(),
@@ -110,9 +100,17 @@ impl Model {
             self.choose(Action::Quit);
         }
     }
+    fn language(&self) -> Language {
+        self.options.language.unwrap_or_else(|| {
+            Language::from_locale(
+                std::env::var("LC_ALL").ok().as_deref(),
+                std::env::var("LANG").ok().as_deref(),
+            )
+        })
+    }
     fn fail(&mut self, message: String) {
         self.error = Some(if message.trim().is_empty() {
-            "操作失敗，請檢查手機連線與環境後重試。".into()
+            text::get(Language::ZhTw, text::Key::OperationFailed).into()
         } else {
             message
         });
@@ -136,9 +134,12 @@ impl Model {
         match config::save_gui(&self.path, &self.options) {
             Ok(()) => true,
             Err(err) => {
-                self.fail(format!(
-                    "無法儲存設定 {}：{err}；請檢查目錄與檔案權限後重試。",
-                    self.path.display()
+                self.fail(text::message(
+                    text::Key::SaveFailed,
+                    &[
+                        ("{path}", &self.path.display().to_string()),
+                        ("{detail}", &err.to_string()),
+                    ],
                 ));
                 false
             }
@@ -146,12 +147,12 @@ impl Model {
     }
     fn choose(&mut self, action: Action) {
         match action {
-            Action::Mode(mode) => {
-                self.options.mode = Some(mode);
-                self.save();
-            }
             Action::Quality(quality) => {
                 self.options.quality = Some(quality);
+                self.save();
+            }
+            Action::Language(language) => {
+                self.options.language = Some(language);
                 self.save();
             }
             Action::Show => self.visible = true,
@@ -160,7 +161,7 @@ impl Model {
                 self.session.stopping = true;
                 self.session.quitting = true;
             }
-            Action::Start | Action::SwitchWifi => {}
+            Action::Start | Action::Clear => {}
         }
     }
 }
@@ -182,10 +183,6 @@ struct App {
     command: Vec<worker::StopHandle>,
     tray: Option<ksni::blocking::Handle<tray::Tray>>,
     _instance: ipc::Instance,
-    address: String,
-    wifi_fields: input::WifiFields,
-    pair_address: String,
-    code: String,
     busy: bool,
     checked: bool,
     next_check: Instant,
@@ -200,14 +197,19 @@ impl App {
         self.model.choose(action);
         match action {
             Action::Start if !self.model.session.running && !self.busy => {
+                if wireless::first_run(&self.model.options) {
+                    self.interface.screen = controller::Screen::Choices;
+                    self.model.visible = true;
+                    return;
+                }
                 if !self.environment_done || !self.install.is_empty() {
                     self.model
-                        .fail("環境尚未就緒，請按「重新檢查環境」並依安裝提示處理後重試。".into());
+                        .fail(text::get(Language::ZhTw, text::Key::NotReady).into());
                     return;
                 }
                 if self.load_error.is_some() {
                     self.model
-                        .fail("設定檔無法讀取，請依視窗中的路徑與欄位提示修正後重新啟動。".into());
+                        .fail(text::zh(text::Key::ConfigUnreadable).into());
                     return;
                 }
                 if !self.model.save() {
@@ -218,10 +220,10 @@ impl App {
                 self.model.session.running = true;
                 self.model.session.stopping = false;
                 self.model.status = Status::Connecting;
-                if self.model.options.mode == Some(Mode::Wifi) && !self.interface.manual {
+                if self.model.options.mode == Some(Mode::Wifi) {
                     self.auto_connect();
                 } else {
-                    worker::session(self.tx.clone(), self.model.options.clone());
+                    let _ = self.tx.send(Event::LaunchSession);
                 }
             }
             Action::Stop | Action::Quit => {
@@ -232,29 +234,7 @@ impl App {
                     let _ = tx.send(());
                 }
             }
-            Action::SwitchWifi if !self.busy && !self.model.session.running => {
-                self.busy = true;
-                let tx = self.tx.clone();
-                let path = self.model.path.clone();
-                thread::spawn(move || {
-                    let runner = worker::SessionRunner::new(tx.clone());
-                    let result = crate::wifi::connect_and_save(
-                        &runner,
-                        None,
-                        None,
-                        &path,
-                        &mut thread::sleep,
-                        &mut worker::Messages::new(tx.clone()),
-                    )
-                    .and_then(|()| {
-                        config::load(&path)
-                            .map_err(io::Error::other)?
-                            .and_then(|options| options.wifi_address)
-                            .ok_or_else(|| io::Error::other("未取得 Wi-Fi 位址"))
-                    });
-                    let _ = tx.send(Event::Switched(result.map_err(|err| err.to_string())));
-                });
-            }
+            Action::Clear => self.clear_connection(),
             _ => {}
         }
     }
@@ -270,6 +250,7 @@ impl App {
                     self.command.push(tx);
                     if projection {
                         self.model.status = Status::Projecting;
+                        self.model.visible = !self.model.tray;
                     }
                 }
                 Event::Log(text) => {
@@ -299,37 +280,11 @@ impl App {
                     }
                     self.command.clear();
                 }
-                Event::Switched(result) => {
-                    self.busy = false;
-                    self.command.clear();
-                    match result {
-                        Ok(address) => {
-                            self.connected(address);
-                        }
-                        Err(err) => {
-                            self.model.fail(format!(
-                                "Wi-Fi 切換或連線失敗：{err}；{}",
-                                worker::NETWORK_HINT
-                            ));
-                        }
-                    }
-                }
-                Event::Paired(result) => {
-                    self.busy = false;
-                    self.command.clear();
-                    match result {
-                        Ok(()) => {
-                            self.model.status = Status::Idle;
-                            self.model.error = None;
-                        }
-                        Err(err) => self.model.fail(format!("配對失敗：{err}；請在手機重新開啟配對視窗，使用新的埠號與配對碼後重試。")),
-                    }
-                }
                 Event::Environment(commands) => {
                     if !commands.is_empty() {
-                        self.model.fail(format!(
-                            "缺少必要工具或版本不符，請安裝後按「重新檢查環境」：\n{}",
-                            commands.join("\n")
+                        self.model.fail(text::message(
+                            text::Key::MissingTools,
+                            &[("{detail}", &commands.join("\n"))],
                         ));
                     }
                     self.install = commands;
@@ -337,6 +292,14 @@ impl App {
                     self.busy = false;
                 }
                 Event::Wireless(event) => self.wireless_event(event),
+                Event::Cleared(result) => self.cleared(result),
+                Event::LaunchSession => {
+                    if self.model.session.stopping {
+                        self.model.finish(Status::Idle, None);
+                    } else {
+                        worker::session(self.tx.clone(), self.model.options.clone());
+                    }
+                }
                 Event::TrayLost => {
                     self.model.tray = false;
                     self.tray = None;
@@ -344,6 +307,7 @@ impl App {
                 }
             }
         }
+        self.deferred_setup_actions();
         self.update_tray();
         if let Some(visible) = visibility_command(self.model.visible, &mut self.last_visibility) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(visible));
@@ -354,19 +318,19 @@ impl App {
     }
     fn update_tray(&self) {
         if let Some(handle) = &self.tray {
-            let mode = self.model.options.mode.unwrap_or_default();
             let quality = self.model.options.quality.unwrap_or_default();
             let status = self.model.status;
+            let language = self.model.language();
+            let running = self.model.session.running || self.interface.cancel.is_some();
             handle.update(|tray| {
-                tray.mode = mode;
                 tray.quality = quality;
                 tray.status = status;
+                tray.language = language;
+                tray.running = running;
             });
         }
     }
     fn connected(&mut self, address: String) {
-        self.wifi_fields = input::WifiFields::from_saved(Some(&address));
-        self.address.clone_from(&address);
         self.model.options.wifi_address = Some(address);
         self.model.options.mode = Some(Mode::Wifi);
         self.model
@@ -429,7 +393,7 @@ impl eframe::App for App {
             }
         }
         if self.model.visible
-            && !matches!(self.interface.screen, controller::Screen::Choices)
+            && matches!(self.interface.screen, controller::Screen::Main)
             && !self.model.session.running
             && !self.busy
             && self.environment_done
@@ -441,22 +405,6 @@ impl eframe::App for App {
             self.check();
         }
         self.panel(ctx);
-    }
-}
-
-/// 非互動配對不經過任何 log；失敗只回傳固定訊息，避免 adb 的輸出回顯配對碼。
-fn pair(runner: &dyn CommandRunner, address: &str, code: &str) -> Result<(), String> {
-    crate::wifi::validate(address)?;
-    if code.len() != 6 || !code.bytes().all(|b| b.is_ascii_digit()) {
-        return Err("配對碼必須是六位數字".into());
-    }
-    let output = runner
-        .run("adb", &["pair", address, code])
-        .map_err(|_| "無法執行 adb 配對".to_string())?;
-    if output.success() {
-        Ok(())
-    } else {
-        Err("配對失敗：請重開手機配對視窗並使用新的埠與碼，或改用 USB 切換".into())
     }
 }
 
@@ -519,16 +467,15 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let icons = icons(&dir)?;
     let tray = tray::Tray {
         events: tx.clone(),
-        mode: model.options.mode.unwrap_or_default(),
+        language: model.language(),
+        running: false,
         quality: model.options.quality.unwrap_or_default(),
         status: model.status,
         icons: icons.to_string_lossy().into_owned(),
     }
     .spawn()
     .ok();
-    let address = model.options.wifi_address.clone().unwrap_or_default();
     let interface = controller::Interface::load(&model.path, &model.options)?;
-    let wifi_fields = input::WifiFields::from_saved(Some(&address));
     let mut app = App {
         last_visibility: None,
         model,
@@ -537,10 +484,6 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         command: Vec::new(),
         tray,
         _instance: instance,
-        address,
-        wifi_fields,
-        pair_address: String::new(),
-        code: String::new(),
         busy: true,
         checked: false,
         next_check: Instant::now(),
@@ -557,7 +500,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let visible = app.model.visible;
     app.last_visibility = Some(visible);
     eframe::run_native(
-        "dex2pc 設定",
+        "dex2pc",
         eframe::NativeOptions {
             // Mesa's Wayland EGL swap can wait indefinitely for vblank. The UI
             // already schedules idle repaints every 100 ms, so it need not block here.
@@ -599,35 +542,8 @@ fn icons(dir: &std::path::Path) -> io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    struct FakeRunner;
-    impl CommandRunner for FakeRunner {
-        fn run(&self, program: &str, args: &[&str]) -> io::Result<crate::runner::CommandOutput> {
-            assert_eq!(program, "adb");
-            assert_eq!(args, ["pair", "phone:1234", "123456"]);
-            Ok(crate::runner::CommandOutput {
-                code: Some(1),
-                stdout: "123456".into(),
-                stderr: "123456".into(),
-            })
-        }
-    }
     #[test]
-    fn pairing_failure_never_exposes_code_from_adb_output() {
-        assert_eq!(
-            pair(&FakeRunner, "phone:1234", "123456"),
-            Err("配對失敗：請重開手機配對視窗並使用新的埠與碼，或改用 USB 切換".into())
-        );
-    }
-    #[test]
-    fn invalid_pair_address_does_not_execute_adb() {
-        assert!(
-            pair(&FakeRunner, "invalid", "123456")
-                .unwrap_err()
-                .contains("無效位址")
-        );
-    }
-    #[test]
-    fn configured_app_starts_with_hidden_window() {
+    fn configured_app_starts_with_visible_window() {
         let model = Model::new(
             PathBuf::from("/unused"),
             Ok(Some(Options {
@@ -636,7 +552,7 @@ mod tests {
                 ..Options::default()
             })),
         );
-        assert!(!model.visible);
+        assert!(model.visible);
     }
     #[test]
     fn unconfigured_app_opens_wizard() {
@@ -690,18 +606,18 @@ mod tests {
         model.choose(Action::Quality(Quality::Low));
         assert_eq!(
             std::fs::read_to_string(path).unwrap(),
-            "mode = \"usb\"\nquality = \"low\"\n"
+            "quality = \"low\"\n"
         );
     }
     #[test]
-    fn tray_mode_action_persists_immediately() {
+    fn language_action_persists_immediately() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         let mut model = Model::new(path.clone(), Ok(None));
-        model.choose(Action::Mode(Mode::Wifi));
+        model.choose(Action::Language(Language::En));
         assert_eq!(
             std::fs::read_to_string(path).unwrap(),
-            "mode = \"wifi\"\nquality = \"balanced\"\n"
+            "language = \"en\"\nquality = \"balanced\"\n"
         );
     }
     #[test]
@@ -756,10 +672,6 @@ mod tests {
                 command: Vec::new(),
                 tray: None,
                 _instance: instance,
-                address: String::new(),
-                wifi_fields: input::WifiFields::default(),
-                pair_address: String::new(),
-                code: String::new(),
                 busy: false,
                 checked: false,
                 next_check: Instant::now(),
@@ -773,7 +685,134 @@ mod tests {
         )
     }
     #[test]
-    fn failed_discovery_exposes_manual_fallback() {
+    fn starting_projection_hides_window_when_tray_is_available() {
+        let (mut app, _dir) = headless_app();
+        app.model.tray = true;
+        let (killed, _rx) = mpsc::channel();
+        let runner = worker::SessionRunner::with_backend(app.tx.clone(), KillRunner(killed));
+        let _child = runner.spawn("scrcpy", &["--new-display"]).unwrap();
+        app.pump(&egui::Context::default());
+        assert!(!app.model.visible);
+    }
+    #[test]
+    fn starting_projection_keeps_window_visible_without_tray() {
+        let (mut app, _dir) = headless_app();
+        let (killed, _rx) = mpsc::channel();
+        let runner = worker::SessionRunner::with_backend(app.tx.clone(), KillRunner(killed));
+        let _child = runner.spawn("scrcpy", &["--new-display"]).unwrap();
+        app.pump(&egui::Context::default());
+        assert!(app.model.visible);
+    }
+    #[test]
+    fn usb_ready_event_saves_mode_and_requests_start() {
+        let (mut app, _dir) = headless_app();
+        app.environment_done = true;
+        app.wireless_event(controller::WirelessEvent::Usb(Ok("SM_S918B".into())));
+        assert!(matches!(
+            app.events.try_recv().unwrap(),
+            Event::LaunchSession
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&app.model.path).unwrap(),
+            "mode = \"usb\"\nquality = \"balanced\"\n"
+        );
+    }
+    struct QrRunner;
+    impl CommandRunner for QrRunner {
+        fn run(&self, program: &str, args: &[&str]) -> io::Result<crate::runner::CommandOutput> {
+            assert_eq!(program, "adb");
+            let stdout = match args {
+                ["connect", "192.168.18.59:37001"] => "connected to 192.168.18.59:37001",
+                ["devices", "-l"] => "192.168.18.59:37001 device model:SM_S918B",
+                _ => panic!("unexpected command"),
+            };
+            Ok(crate::runner::CommandOutput {
+                code: Some(0),
+                stdout: stdout.into(),
+                stderr: String::new(),
+            })
+        }
+        fn run_timeout(
+            &self,
+            program: &str,
+            args: &[&str],
+            _: Duration,
+        ) -> io::Result<crate::runner::TimedOutput> {
+            assert_eq!(program, "adb");
+            let stdout = match args {
+                ["pair", "192.168.18.59:44517", "test-secret"] => {
+                    "Successfully paired to 192.168.18.59:44517"
+                }
+                ["mdns", "services"] => "adb-phone-new _adb-tls-connect._tcp 192.168.18.59:37001",
+                _ => panic!("unexpected command"),
+            };
+            Ok(crate::runner::TimedOutput::Exited(
+                crate::runner::CommandOutput {
+                    code: Some(0),
+                    stdout: stdout.into(),
+                    stderr: String::new(),
+                },
+            ))
+        }
+    }
+    #[test]
+    fn qr_pair_success_connects_and_requests_session_start() {
+        let (mut app, _dir) = headless_app();
+        wireless::pair_qr(&QrRunner, "192.168.18.59:44517", "test-secret").unwrap();
+        let (_tx, cancel) = mpsc::channel();
+        let service = wireless::discover(&QrRunner, &cancel, 1, |entries| {
+            wireless::choose(entries, Some("192.168.18.59:44517"), None)
+        })
+        .unwrap();
+        let result =
+            controller::connect_service(&QrRunner, service, &app.model.path, &mut Vec::new());
+        app.model.session.running = true;
+        app.wireless_event(controller::WirelessEvent::Connected(result));
+        assert!(matches!(
+            app.events.try_recv().unwrap(),
+            Event::LaunchSession
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&app.model.path).unwrap(),
+            "mode = \"wifi\"\nquality = \"balanced\"\nwifi_address = \"192.168.18.59:37001\"\n"
+        );
+    }
+    #[test]
+    fn language_setting_loads_after_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut model = Model::new(path.clone(), Ok(None));
+        model.choose(Action::Language(Language::ZhTw));
+        assert_eq!(
+            config::load(&path).unwrap().unwrap().language,
+            Some(Language::ZhTw)
+        );
+    }
+    #[test]
+    fn clear_resets_stop_before_starting_disconnect_worker() {
+        let (mut app, _dir) = headless_app();
+        app.interface.clear_requested = true;
+        app.model.session.stopping = true;
+        app.deferred_setup_actions();
+        let stopping = app.model.session.stopping;
+        // Join the config-only worker before dropping its temporary directory.
+        assert!(matches!(
+            app.events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            Event::Cleared(Ok(()))
+        ));
+        assert!(!stopping);
+    }
+    #[test]
+    fn clear_requested_during_running_session_waits_before_saving() {
+        let (mut app, _dir) = headless_app();
+        app.model.session.running = true;
+        app.clear_connection();
+        app.deferred_setup_actions();
+        assert!(app.interface.clear_requested);
+        assert!(!app.model.path.exists());
+    }
+    #[test]
+    fn failed_discovery_exposes_rescan_and_repair() {
         let (mut app, _dir) = headless_app();
         app.model.session.running = true;
         app.wireless_event(controller::WirelessEvent::Connected(Err(
@@ -893,42 +932,6 @@ mod tests {
         );
     }
     #[test]
-    fn wifi_switch_error_explains_current_ip_and_usb_recovery() {
-        let (mut app, _dir) = headless_app();
-        app.tx
-            .send(Event::Switched(Err("未建立 Wi-Fi 連線，設定未儲存".into())))
-            .unwrap();
-        app.pump(&egui::Context::default());
-        assert_eq!(
-            app.model.error.as_deref(),
-            Some(
-                "Wi-Fi 切換或連線失敗：未建立 Wi-Fi 連線，設定未儲存；手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。"
-            )
-        );
-    }
-    #[test]
-    fn pairing_error_explains_how_to_retry_on_the_phone() {
-        let (mut app, _dir) = headless_app();
-        app.tx
-            .send(Event::Paired(Err("無法執行 adb 配對".into())))
-            .unwrap();
-        app.pump(&egui::Context::default());
-        assert_eq!(
-            app.model.error.as_deref(),
-            Some(
-                "配對失敗：無法執行 adb 配對；請在手機重新開啟配對視窗，使用新的埠號與配對碼後重試。"
-            )
-        );
-    }
-    #[test]
-    fn successful_pairing_clears_the_previous_error_state() {
-        let (mut app, _dir) = headless_app();
-        app.model.fail("配對失敗".into());
-        app.tx.send(Event::Paired(Ok(()))).unwrap();
-        app.pump(&egui::Context::default());
-        assert_eq!((app.model.status, app.model.error), (Status::Idle, None));
-    }
-    #[test]
     fn missing_environment_tools_explain_the_install_command() {
         let (mut app, _dir) = headless_app();
         app.tx
@@ -943,10 +946,11 @@ mod tests {
     #[test]
     fn tray_start_before_environment_ready_explains_the_blocker() {
         let (mut app, _dir) = headless_app();
+        app.model.options.mode = Some(Mode::Usb);
         app.action(Action::Start);
         assert_eq!(
             app.model.error.as_deref(),
-            Some("環境尚未就緒，請按「重新檢查環境」並依安裝提示處理後重試。")
+            Some("環境尚未就緒，請重新檢查環境並依安裝提示處理。")
         );
     }
     #[test]

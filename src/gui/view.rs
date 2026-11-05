@@ -1,5 +1,7 @@
 use super::controller::{self, Screen};
-use super::{Action, App, Event, Mode, Quality, Status, egui, input, pair, thread, worker};
+use super::text::{self, Key};
+use super::{Action, App, Mode, Quality, Status, egui};
+use crate::preferences::Language;
 
 fn card(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
@@ -11,14 +13,6 @@ fn card(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
             contents(ui);
         });
 }
-
-fn primary_label(status: Status) -> &'static str {
-    match status {
-        Status::Connecting | Status::Projecting => "停止",
-        Status::Idle | Status::Error => "開啟 DeX",
-    }
-}
-
 fn status_color(status: Status) -> egui::Color32 {
     match status {
         Status::Idle => egui::Color32::from_rgb(140, 140, 140),
@@ -27,24 +21,33 @@ fn status_color(status: Status) -> egui::Color32 {
         Status::Error => egui::Color32::from_rgb(220, 65, 65),
     }
 }
-
+pub(super) fn fallback_actions() -> [Key; 2] {
+    [Key::Rescan, Key::Repair]
+}
 impl App {
+    fn t(&self, key: Key) -> &'static str {
+        text::get(self.model.language(), key)
+    }
     pub(super) fn panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().item_spacing = egui::vec2(12.0, 14.0);
             ui.spacing_mut().button_padding = egui::vec2(16.0, 10.0);
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some(notice) = self.font_notice {
-                    ui.label(notice);
+                if self.font_notice.is_some() {
+                    ui.label(super::fonts::NOTICE);
                 }
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     ui.heading(egui::RichText::new("DeX").size(36.0).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("⚙ 設定").clicked() {
+                        if ui.button(format!("⚙ {}", self.t(Key::Settings))).clicked() {
                             self.interface.screen =
                                 if matches!(self.interface.screen, Screen::Settings) {
-                                    Screen::Main
+                                    if super::wireless::first_run(&self.model.options) {
+                                        Screen::Choices
+                                    } else {
+                                        Screen::Main
+                                    }
                                 } else {
                                     Screen::Settings
                                 };
@@ -54,6 +57,7 @@ impl App {
                 ui.add_space(12.0);
                 match self.interface.screen {
                     Screen::Choices => self.choices(ui),
+                    Screen::Usb => self.usb_screen(ui),
                     Screen::Main => self.main_screen(ui),
                     Screen::Settings => self.secondary(ui),
                 }
@@ -61,18 +65,14 @@ impl App {
             });
         });
     }
-
     fn choices(&mut self, ui: &mut egui::Ui) {
-        ui.label(egui::RichText::new("讓手機，成為你的桌面。").size(22.0));
-        ui.weak("選擇連線方式，完成一次設定後即可一鍵開啟。");
-        for (mode, title) in [
-            (Mode::Wifi, "無線連線\n掃描 QR 圖碼，輕鬆配對"),
-            (Mode::Usb, "USB 連線\n接上傳輸線，允許 USB 偵錯"),
-        ] {
+        ui.label(egui::RichText::new(self.t(Key::Title)).size(22.0));
+        ui.weak(self.t(Key::Choose));
+        for (mode, key) in [(Mode::Usb, Key::Usb), (Mode::Wifi, Key::Wifi)] {
             if ui
                 .add_enabled(
-                    !self.busy && self.install.is_empty(),
-                    egui::Button::new(egui::RichText::new(title).size(19.0))
+                    !self.busy && self.environment_done && self.install.is_empty(),
+                    egui::Button::new(egui::RichText::new(self.t(key)).size(22.0))
                         .corner_radius(18)
                         .min_size(egui::vec2(ui.available_width(), 100.0)),
                 )
@@ -83,7 +83,23 @@ impl App {
         }
         self.errors(ui);
     }
-
+    fn back_button(&mut self, ui: &mut egui::Ui) {
+        if ui.button(self.t(Key::Back)).clicked() {
+            self.back_to_choices();
+        }
+    }
+    fn usb_screen(&mut self, ui: &mut egui::Ui) {
+        card(ui, |ui| {
+            ui.heading(self.t(Key::Usb));
+            ui.label(self.t(Key::UsbHint));
+            if self.busy {
+                ui.spinner();
+                ui.weak(self.t(Key::Waiting));
+            }
+            self.errors(ui);
+        });
+        self.back_button(ui);
+    }
     fn main_screen(&mut self, ui: &mut egui::Ui) {
         if self.interface.pairing.is_some() {
             self.pairing_screen(ui);
@@ -91,45 +107,41 @@ impl App {
         }
         card(ui, |ui| {
             let name = if self.interface.device_name.is_empty() {
-                "你的 Android 手機"
+                self.t(Key::Phone)
             } else {
                 &self.interface.device_name
             };
             ui.label(egui::RichText::new(name).size(24.0).strong());
-            ui.weak(if self.model.options.mode == Some(Mode::Wifi) {
-                "Wi-Fi · 無線連線"
+            ui.weak(self.t(if self.model.options.mode == Some(Mode::Wifi) {
+                Key::Wifi
             } else {
-                "USB · 有線連線"
-            });
+                Key::Usb
+            }));
             ui.horizontal(|ui| {
                 ui.colored_label(status_color(self.model.status), "●");
-                ui.label(self.model.status.label());
+                ui.label(text::status(self.model.language(), self.model.status));
             });
             self.errors(ui);
             if self.interface.fallback {
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("重新掃描").clicked() {
-                        self.interface.manual = false;
-                        self.action(Action::Start);
-                    }
-                    if ui.button("手動輸入埠號").clicked() {
-                        self.interface.manual = true;
+                    for key in fallback_actions() {
+                        if ui.button(self.t(key)).clicked() {
+                            match key {
+                                Key::Rescan => self.action(Action::Start),
+                                _ => self.begin_qr(),
+                            }
+                        }
                     }
                 });
             }
         });
         ui.add_space(12.0);
-        let running = self.model.session.running || self.busy;
-        let label = if running {
-            "停止"
-        } else {
-            primary_label(self.model.status)
-        };
+        let running = self.model.session.running || self.interface.cancel.is_some();
         if ui
             .add_enabled(
-                running || (self.environment_done && self.install.is_empty()),
+                running || (!self.busy && self.environment_done && self.install.is_empty()),
                 egui::Button::new(
-                    egui::RichText::new(label)
+                    egui::RichText::new(self.t(if running { Key::Stop } else { Key::Start }))
                         .size(21.0)
                         .color(egui::Color32::WHITE),
                 )
@@ -141,58 +153,36 @@ impl App {
         {
             self.action(if running { Action::Stop } else { Action::Start });
         }
-        if self.interface.manual && self.model.options.mode == Some(Mode::Wifi) {
-            ui.add_enabled_ui(!running, |ui| self.wifi(ui));
-        } else {
-            ui.weak("設定會自動儲存，下次直接開啟 DeX。");
-        }
     }
-
     fn pairing_screen(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
-            ui.heading("掃描，開始無線連線");
-            ui.label("開發人員選項 → 無線偵錯 → 使用 QR 圖碼配對裝置");
+            ui.heading(self.t(Key::QrTitle));
+            ui.label(self.t(Key::WifiHint));
+            ui.label(self.t(Key::QrPath));
             if let Some(pairing) = &self.interface.pairing {
                 controller::draw_qr(ui, pairing);
             }
-            ui.weak(if self.busy {
-                "等待手機掃描…"
+            ui.weak(self.t(if self.busy {
+                Key::Waiting
             } else {
-                "掃描已結束，請重新產生 QR 圖碼。"
-            });
+                Key::QrEnded
+            }));
             self.errors(ui);
-        });
-        if self.busy {
-            if ui.button("停止配對").clicked() {
-                self.action(Action::Stop);
-            }
-        } else if ui.button("重新配對").clicked() {
-            self.begin_qr();
-        }
-        if !self.busy && ui.button("改用六位配對碼").clicked() {
-            self.interface.pairing = None;
-            self.interface.manual = true;
-        }
-    }
-
-    fn mode_toggle(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            for (mode, label) in [(Mode::Usb, "USB"), (Mode::Wifi, "Wi-Fi")] {
-                if ui
-                    .add_enabled(
-                        !self.model.session.running && !self.busy,
-                        egui::Button::new(label)
-                            .selected(self.model.options.mode.unwrap_or_default() == mode)
-                            .min_size(egui::vec2(100.0, 38.0)),
-                    )
-                    .clicked()
-                {
-                    self.action(Action::Mode(mode));
-                }
+            if !self.busy {
+                ui.horizontal_wrapped(|ui| {
+                    for key in fallback_actions() {
+                        if ui.button(self.t(key)).clicked() {
+                            match key {
+                                Key::Rescan => self.scan_qr(),
+                                _ => self.begin_qr(),
+                            }
+                        }
+                    }
+                });
             }
         });
+        self.back_button(ui);
     }
-
     fn errors(&self, ui: &mut egui::Ui) {
         if let Some(error) = self.load_error.as_ref().or(self.model.error.as_ref()) {
             egui::Frame::group(ui.style())
@@ -200,130 +190,44 @@ impl App {
                 .stroke(egui::Stroke::new(1.0_f32, status_color(Status::Error)))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.colored_label(status_color(Status::Error), error);
+                    ui.colored_label(
+                        status_color(Status::Error),
+                        super::text::diagnostic(self.model.language(), error),
+                    );
                 });
         }
     }
-
-    fn wifi(&mut self, ui: &mut egui::Ui) {
-        ui.separator();
-        let saved = input::host(self.model.options.wifi_address.as_deref()).is_some();
-        if saved {
-            ui.horizontal(|ui| {
-                ui.label("手機 IP");
-                if self.wifi_fields.editing {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.wifi_fields.ip)
-                            .desired_width(180.0)
-                            .hint_text("192.168.18.59"),
-                    );
-                } else {
-                    ui.strong(&self.wifi_fields.ip);
-                    if ui.small_button("改 IP").clicked() {
-                        self.wifi_fields.editing = true;
-                    }
-                }
-            });
-            ui.label("手機「無線偵錯」頁面上的連接埠");
-            ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.wifi_fields.port)
-                        .desired_width(120.0)
-                        .hint_text("連線埠"),
-                );
-                if ui.button("連線").clicked() {
-                    self.connect_phone();
-                }
-            });
-        } else {
-            ui.label("手機「無線偵錯」頁面上的 IP 位址和連接埠");
-            ui.add(egui::TextEdit::singleline(&mut self.address).hint_text("192.168.18.59:37001"));
-            ui.horizontal(|ui| {
-                if ui.button("連線").clicked() {
-                    self.connect_phone();
-                }
-                if ui.button("用 USB 自動設定").clicked() {
-                    self.action(Action::SwitchWifi);
-                }
-            });
-        }
-        ui.collapsing("首次配對", |ui| {
-            ui.label("先配對，再連線");
-            ui.label("「使用配對碼配對裝置」視窗中的連接埠");
-            if !saved {
-                ui.small("先在上方填入完整 IP:埠，再填配對埠。");
-            }
-            ui.add(
-                egui::TextEdit::singleline(&mut self.pair_address).hint_text("配對埠，例如 44517"),
-            );
-            ui.add(
-                egui::TextEdit::singleline(&mut self.code)
-                    .password(true)
-                    .char_limit(6)
-                    .hint_text("六位配對碼"),
-            );
-            if ui.button("配對").clicked() {
-                self.pair_phone();
-            }
-        });
-    }
-
     fn install_hints(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         for command in &self.install {
             ui.horizontal_wrapped(|ui| {
                 ui.label(command);
-                if ui.button("複製").clicked() {
+                if ui.button(self.t(Key::Copy)).clicked() {
                     ctx.copy_text(command.clone());
                 }
             });
         }
         if !self.install.is_empty()
             && ui
-                .add_enabled(!self.busy, egui::Button::new("重新檢查環境"))
+                .add_enabled(!self.busy, egui::Button::new(self.t(Key::Check)))
                 .clicked()
         {
             self.environment();
         }
     }
-
     fn secondary(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
-            ui.heading("設定");
-            self.mode_toggle(ui);
-            if ui
-                .add_enabled(
-                    !self.busy && !self.model.session.running,
-                    egui::Button::new("重新配對（QR 圖碼）"),
-                )
-                .clicked()
-            {
-                self.model.options.mode = Some(Mode::Wifi);
-                self.begin_qr();
-            }
-            if ui.button("手動輸入埠號").clicked() {
-                self.interface.manual = true;
-                self.interface.screen = Screen::Main;
-            }
-            if ui
-                .add_enabled(
-                    !self.busy && !self.model.session.running,
-                    egui::Button::new("切換到 Wi-Fi（先接 USB）"),
-                )
-                .clicked()
-            {
-                self.action(Action::SwitchWifi);
-            }
-            ui.label("畫質（自動儲存）");
+            ui.heading(self.t(Key::Settings));
+            ui.label(self.t(Key::Quality));
             ui.horizontal(|ui| {
-                for (quality, label) in [
-                    (Quality::High, "高 16M"),
-                    (Quality::Balanced, "平衡 8M"),
-                    (Quality::Low, "低 4M"),
+                for (quality, key) in [
+                    (Quality::High, Key::High),
+                    (Quality::Balanced, Key::Balanced),
+                    (Quality::Low, Key::Low),
                 ] {
                     if ui
                         .selectable_label(
                             self.model.options.quality.unwrap_or_default() == quality,
-                            label,
+                            self.t(key),
                         )
                         .clicked()
                     {
@@ -331,11 +235,25 @@ impl App {
                     }
                 }
             });
-            if ui.button("結束 dex2pc").clicked() {
-                self.action(Action::Quit);
+            ui.label(self.t(Key::Language));
+            ui.horizontal(|ui| {
+                for (language, key) in
+                    [(Language::ZhTw, Key::Chinese), (Language::En, Key::English)]
+                {
+                    if ui
+                        .selectable_label(self.model.language() == language, self.t(key))
+                        .clicked()
+                    {
+                        self.action(Action::Language(language));
+                    }
+                }
+            });
+            if ui.button(self.t(Key::Clear)).clicked() {
+                self.action(Action::Clear);
             }
+            self.errors(ui);
         });
-        ui.collapsing("詳細紀錄", |ui| {
+        ui.collapsing(self.t(Key::Log), |ui| {
             egui::ScrollArea::vertical()
                 .max_height(180.0)
                 .show(ui, |ui| {
@@ -343,101 +261,15 @@ impl App {
                 });
         });
     }
-
-    fn connect_phone(&mut self) {
-        let saved = input::host(self.model.options.wifi_address.as_deref());
-        let result = if saved.is_some() {
-            input::endpoint(&self.wifi_fields.port, Some(&self.wifi_fields.ip))
-        } else {
-            input::endpoint(&self.address, None)
-        };
-        let address = match result {
-            Ok(address) => address,
-            Err(err) => {
-                self.model.fail(err);
-                return;
-            }
-        };
-        self.busy = true;
-        let path = self.model.path.clone();
-        let tx = self.tx.clone();
-        thread::spawn(move || {
-            let runner = worker::SessionRunner::new(tx.clone());
-            let result = crate::wifi::connect_and_save(
-                &runner,
-                Some(&address),
-                None,
-                &path,
-                &mut thread::sleep,
-                &mut worker::Messages::new(tx.clone()),
-            )
-            .map(|()| address);
-            let _ = tx.send(Event::Switched(result.map_err(|err| err.to_string())));
-        });
-    }
-
-    fn pair_phone(&mut self) {
-        let host = if input::host(self.model.options.wifi_address.as_deref()).is_some() {
-            Some(self.wifi_fields.ip.as_str())
-        } else {
-            input::host(Some(&self.address))
-        };
-        let address = match input::endpoint(&self.pair_address, host) {
-            Ok(address) => address,
-            Err(err) => {
-                self.model.fail(err);
-                return;
-            }
-        };
-        self.busy = true;
-        let code = std::mem::take(&mut self.code);
-        let tx = self.tx.clone();
-        thread::spawn(move || {
-            let runner = worker::SessionRunner::new(tx.clone());
-            let result = pair(&runner, &address, &code);
-            let _ = tx.send(Event::Paired(result));
-        });
-    }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn idle_primary_label() {
-        assert_eq!(primary_label(Status::Idle), "開啟 DeX");
-    }
-    #[test]
-    fn connecting_primary_label() {
-        assert_eq!(primary_label(Status::Connecting), "停止");
-    }
-    #[test]
-    fn projecting_primary_label() {
-        assert_eq!(primary_label(Status::Projecting), "停止");
-    }
-    #[test]
-    fn error_primary_label() {
-        assert_eq!(primary_label(Status::Error), "開啟 DeX");
-    }
-    #[test]
-    fn idle_dot_is_grey() {
+    fn not_found_offers_only_rescan_and_repair() {
         assert_eq!(
-            status_color(Status::Idle),
-            egui::Color32::from_rgb(140, 140, 140)
-        );
-    }
-    #[test]
-    fn connecting_dot_is_amber() {
-        assert_eq!(
-            status_color(Status::Connecting),
-            egui::Color32::from_rgb(220, 155, 30)
-        );
-    }
-    #[test]
-    fn projecting_dot_is_green() {
-        assert_eq!(
-            status_color(Status::Projecting),
-            egui::Color32::from_rgb(40, 170, 100)
+            fallback_actions().map(|key| text::get(Language::En, key)),
+            ["Rescan", "Pair again"]
         );
     }
     #[test]

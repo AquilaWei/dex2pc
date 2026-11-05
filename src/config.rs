@@ -9,7 +9,7 @@ use clap::Args;
 use crate::scrcpy::{Dpi, InputMode, Options, Resolution};
 
 /// 設定檔中可用的欄位；出現其他欄位就報錯，避免打錯字的設定被默默忽略。
-const FIELDS: [&str; 10] = [
+const FIELDS: [&str; 11] = [
     "resolution",
     "dpi",
     "video_bit_rate",
@@ -20,6 +20,7 @@ const FIELDS: [&str; 10] = [
     "wifi_address",
     "mode",
     "quality",
+    "language",
 ];
 
 /// 算出設定檔位置：`$XDG_CONFIG_HOME/dex2pc/config.toml`，沒設時用 `$HOME/.config/dex2pc/config.toml`。
@@ -120,23 +121,13 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
                     options.mouse = Some(mode);
                 }
             }
-            "mode" => {
-                options.mode = Some(
-                    value
-                        .as_str()
-                        .ok_or_else(|| invalid("要是字串".into()))?
-                        .parse()
-                        .map_err(invalid)?,
-                );
-            }
-            "quality" => {
-                options.quality = Some(
-                    value
-                        .as_str()
-                        .ok_or_else(|| invalid("要是字串".into()))?
-                        .parse()
-                        .map_err(invalid)?,
-                );
+            "mode" | "quality" | "language" => {
+                let value = value.as_str().ok_or_else(|| invalid("要是字串".into()))?;
+                match field.as_str() {
+                    "mode" => options.mode = Some(value.parse().map_err(invalid)?),
+                    "quality" => options.quality = Some(value.parse().map_err(invalid)?),
+                    _ => options.language = Some(value.parse().map_err(invalid)?),
+                }
             }
             "wifi_address" => {
                 let address = value
@@ -561,7 +552,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "設定檔 /xdg/dex2pc/config.toml 有未知欄位 resolutoin；\
-             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality"
+             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language"
         );
     }
 
@@ -762,10 +753,14 @@ pub fn save_gui(path: &Path, options: &Options) -> io::Result<()> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
         Err(err) => return Err(err),
     };
-    table.insert(
-        "mode".into(),
-        options.mode.unwrap_or_default().to_string().into(),
-    );
+    if let Some(mode) = options.mode {
+        table.insert("mode".into(), mode.to_string().into());
+    } else {
+        table.remove("mode");
+    }
+    if let Some(language) = options.language {
+        table.insert("language".into(), language.as_str().into());
+    }
     table.insert(
         "quality".into(),
         options.quality.unwrap_or_default().to_string().into(),
@@ -773,11 +768,31 @@ pub fn save_gui(path: &Path, options: &Options) -> io::Result<()> {
     if let Some(address) = &options.wifi_address {
         crate::wifi::validate(address).map_err(io::Error::other)?;
         table.insert("wifi_address".into(), address.clone().into());
+    } else {
+        table.remove("wifi_address");
     }
+    write_gui_table(path, &table)
+}
+
+/// Remove only computer-side connection preferences, preserving every other key.
+/// Invalid or unreadable config and atomic-write failures are returned to the caller.
+pub fn clear_gui_connection(path: &Path) -> io::Result<()> {
+    load(path).map_err(io::Error::other)?;
+    let mut table: toml::Table = match fs::read_to_string(path) {
+        Ok(text) => text.parse().map_err(io::Error::other)?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+        Err(err) => return Err(err),
+    };
+    table.remove("mode");
+    table.remove("wifi_address");
+    write_gui_table(path, &table)
+}
+
+fn write_gui_table(path: &Path, table: &toml::Table) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let text = toml::to_string(&table).map_err(io::Error::other)?;
+    let text = toml::to_string(table).map_err(io::Error::other)?;
     // 同目錄 rename，避免中途結束時留下一半設定；GUI 的單一實例是唯一寫入者。
     let temporary = path.with_extension("toml.tmp");
     fs::write(&temporary, text)?;
