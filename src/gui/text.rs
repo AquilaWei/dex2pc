@@ -133,12 +133,27 @@ pub(super) fn diagnostic(language: Language, message: &str) -> String {
         Key::ScanFailed
     } else if message.contains("設定") {
         Key::ConfigFailed
+    } else if message.starts_with("投影失敗") {
+        Key::ProjectionFailed
     } else if message.contains("環境") {
         Key::Environment
     } else {
         Key::ProjectionFailed
     };
     let mut result = get(language, key).to_owned();
+    if let Some((reason, _)) = message
+        .strip_prefix(zh(Key::SessionIo).split('{').next().unwrap_or_default())
+        .and_then(|value| value.split_once('。'))
+    {
+        let reason = TABLE
+            .iter()
+            .find_map(|&(zh, en)| (reason == zh).then_some(en))
+            .unwrap_or(reason);
+        if reason.is_ascii() && !reason.is_empty() {
+            result.push('\n');
+            result.push_str(reason);
+        }
+    }
     if let Some(code) = message
         .split("exit code ")
         .nth(1)
@@ -160,6 +175,26 @@ pub(super) fn diagnostic(language: Language, message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn english_projection_failure_is_not_reported_as_missing_tools() {
+        assert_eq!(
+            diagnostic(
+                Language::En,
+                "投影失敗（exit code 7）。請檢查手機連線與環境，依下方訊息處理後重試。"
+            ),
+            "Projection failed. Check your phone connection and scrcpy (3.2 or later), then retry. (exit code 7)"
+        );
+    }
+    #[test]
+    fn english_projection_failure_keeps_io_reason() {
+        assert_eq!(
+            diagnostic(
+                Language::En,
+                "投影失敗：Permission denied (os error 13)。請檢查手機連線與環境，依下方訊息處理後重試。"
+            ),
+            "Projection failed. Check your phone connection and scrcpy (3.2 or later), then retry.\nPermission denied (os error 13)"
+        );
+    }
     #[test]
     fn every_translation_has_both_languages() {
         assert!(
