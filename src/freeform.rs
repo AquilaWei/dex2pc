@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::runner::{CommandOutput, CommandRunner, RunningCommand, TimedOutput};
 
-/// Only shell-owned virtual scrcpy displays are eligible. Deduplicate base/override records.
+/// 只選 shell 擁有的 scrcpy 虛擬顯示器，並合併 base／override 的重複紀錄。
 fn displays(dump: &str) -> BTreeSet<u32> {
     dump.lines()
         .filter(|line| {
@@ -51,14 +51,16 @@ fn mode_args(serial: &str, id: &str, mode: &str) -> Vec<String> {
     .to_vec()
 }
 
-/// Decorates both launch paths so every reconnect takes a fresh display snapshot.
-/// Failures only warn: freeform must never prevent a usable projection.
+/// 包裝 CLI 與 GUI 的投影流程，讓每次啟動或重連都重新比對顯示器，避免修改其他工作階段。
+/// 顯示器辨識或模式設定失敗只警告並繼續投影；子行程啟動、監測或輸出寫入失敗則回傳 I/O 錯誤。
 pub struct Projection<'a> {
     runner: &'a dyn CommandRunner,
     serial: &'a str,
     enabled: bool,
 }
 impl<'a> Projection<'a> {
+    /// 綁定已選定的手機與視窗模式，讓兩條啟動路徑採用相同的顯示器設定策略。
+    /// 此建構函式不執行指令、不會失敗；執行階段的辨識或設定失敗會警告，投影 I/O 錯誤則回傳呼叫端。
     pub fn new(runner: &'a dyn CommandRunner, serial: &'a str, enabled: bool) -> Self {
         Self {
             runner,
@@ -80,7 +82,8 @@ impl<'a> Projection<'a> {
     }
 
     fn adb(&self, args: &[&str]) -> Result<String, String> {
-        match self.runner.run_timeout("adb", args, Duration::from_secs(2)) {
+        // 無線 adb 有延遲，且 dumpsys display 輸出很大，單次指令保留五秒。
+        match self.runner.run_timeout("adb", args, Duration::from_secs(5)) {
             Ok(TimedOutput::Exited(output)) if output.success() => Ok(output.stdout),
             Ok(TimedOutput::Exited(output)) => Err(format!(
                 "adb exit {:?}: {} {}",
@@ -88,7 +91,7 @@ impl<'a> Projection<'a> {
                 output.stdout.trim(),
                 output.stderr.trim()
             )),
-            Ok(TimedOutput::TimedOut) => Err("adb 逾時（2 秒）".into()),
+            Ok(TimedOutput::TimedOut) => Err("adb 逾時（5 秒）".into()),
             Err(err) => Err(err.to_string()),
         }
     }
@@ -99,11 +102,12 @@ impl<'a> Projection<'a> {
     }
 
     fn configure(&self, before: &BTreeSet<u32>) -> Result<(), String> {
-        let deadline = Instant::now() + Duration::from_secs(8);
+        // scrcpy 啟動後才註冊顯示器，保留十五秒等待手機完成建立。
+        let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             let dump = self.adb(&["-s", self.serial, "shell", "dumpsys", "display"])?;
             if let Some(id) = new_display(before, &dump)? {
-                // Android may retain per-uniqueId overrides; explicitly restore fullscreen when disabled.
+                // Android 可能依 uniqueId 保留模式覆寫，停用時要明確還原全螢幕。
                 let mode_id = if self.enabled { "5" } else { "1" };
                 let expected = if self.enabled {
                     "freeform"
@@ -128,19 +132,26 @@ impl<'a> Projection<'a> {
                 return Ok(());
             }
             if Instant::now() >= deadline {
-                return Err("找不到唯一的新 scrcpy 顯示器（等待 8 秒）".into());
+                return Err("找不到唯一的新 scrcpy 顯示器（等待 15 秒）".into());
             }
-            // Display registration happens after scrcpy starts, not when its process is spawned.
+            // 子行程建立不代表顯示器已註冊，稍後重試以等待手機完成。
             thread::sleep(Duration::from_millis(200));
         }
     }
 }
 
-fn warning(out: &mut dyn Write, reason: &str) -> io::Result<()> {
-    writeln!(
-        out,
-        "警告：無法設定 DeX 視窗模式：{reason}；投影繼續，app 可能保留原有模式。可用 --no-freeform 或 freeform = false 關閉自由視窗。"
-    )
+fn warning(out: &mut dyn Write, reason: &str, enabled: bool) -> io::Result<()> {
+    if enabled {
+        writeln!(
+            out,
+            "警告：無法設定 DeX 自由視窗：{reason}；投影繼續，app 可能保留原有模式。可用 --no-freeform 或 freeform = false 關閉自由視窗。"
+        )
+    } else {
+        writeln!(
+            out,
+            "警告：DeX 全螢幕還原失敗：{reason}；投影繼續，app 可能保留原有模式。"
+        )
+    }
 }
 
 impl CommandRunner for Projection<'_> {
@@ -162,14 +173,14 @@ impl CommandRunner for Projection<'_> {
         let before = match self.snapshot() {
             Ok(before) => before,
             Err(err) => {
-                warning(out, &err)?;
+                warning(out, &err, self.enabled)?;
                 return self.runner.run_projection(args, out);
             }
         };
         let mut child = self.runner.spawn_projection(args, out)?;
         match self.configure(&before) {
             Ok(()) => self.report_mode(out)?,
-            Err(err) => warning(out, &err)?,
+            Err(err) => warning(out, &err, self.enabled)?,
         }
         loop {
             if let Some(output) = child.try_wait()? {
@@ -187,7 +198,7 @@ impl CommandRunner for Projection<'_> {
         let child = self.runner.spawn_projection(args, out)?;
         match before.and_then(|before| self.configure(&before)) {
             Ok(()) => self.report_mode(out)?,
-            Err(err) => warning(out, &err)?,
+            Err(err) => warning(out, &err, self.enabled)?,
         }
         Ok(child)
     }
@@ -196,7 +207,7 @@ impl CommandRunner for Projection<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    // Fixed excerpts of Android 16 dumpsys display, with unrelated properties omitted.
+    // Android 16 dumpsys display 的固定片段，省略無關的屬性。
     const ONE: &str = "mBaseDisplayInfo=DisplayInfo{\"scrcpy\", displayId 82, displayGroupId 0, type VIRTUAL, uniqueId \"virtual:com.android.shell,2000,scrcpy,0\", owner com.android.shell (uid 2000), removeMode 1}\n\
         mOverrideDisplayInfo=DisplayInfo{\"scrcpy\", displayId 82, displayGroupId 0, type VIRTUAL, uniqueId \"virtual:com.android.shell,2000,scrcpy,0\", owner com.android.shell (uid 2000), removeMode 1}";
     const TWO: &str = "mBaseDisplayInfo=DisplayInfo{\"scrcpy\", displayId 82, type VIRTUAL, uniqueId \"virtual:com.android.shell,2000,scrcpy,0\", owner com.android.shell (uid 2000)}\n\
@@ -399,6 +410,22 @@ mod tests {
                 "scrcpy ",
                 "adb -s phone shell dumpsys display"
             ]
+        );
+    }
+    #[test]
+    fn disabled_mode_warning_reports_reset_failure_without_disable_advice() {
+        let runner = Fake::new(vec![
+            Ok(String::new()),
+            Ok(ONE.into()),
+            Err("unsupported command".into()),
+        ]);
+        let mut out = Vec::new();
+        Projection::new(&runner, "phone", false)
+            .spawn_projection(&[], &mut out)
+            .unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "警告：DeX 全螢幕還原失敗：adb exit Some(1):  unsupported command；投影繼續，app 可能保留原有模式。\n"
         );
     }
 }

@@ -42,8 +42,10 @@ pub trait CommandRunner {
     /// 程式有執行但以非 0 結束不算錯誤，由呼叫端看 `code` 判斷。
     fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput>;
 
-    /// Projection hooks let optional display setup share CLI/GUI lifecycle and warnings.
-    /// Defaults preserve runners that do not need display setup.
+    /// 讓顯示器設定與 CLI／GUI 共用投影生命週期及警告輸出；預設沿用原本的阻塞執行方式。
+    ///
+    /// # Errors
+    /// 子行程啟動、監測或警告輸出寫入失敗時回傳 I/O 錯誤；顯示器設定失敗只警告並繼續投影。
     fn run_projection(
         &self,
         args: &[&str],
@@ -52,7 +54,10 @@ pub trait CommandRunner {
         self.run("scrcpy", args)
     }
 
-    /// Start projection without blocking its lifetime; spawn errors are returned.
+    /// 讓顯示器設定與可輪詢的投影子行程共用生命週期，供 Wi-Fi 探測與 GUI 停止操作使用。
+    ///
+    /// # Errors
+    /// 子行程啟動或警告輸出寫入失敗時回傳 I/O 錯誤；顯示器設定失敗只警告並保留投影。
     fn spawn_projection(
         &self,
         args: &[&str],
