@@ -1,12 +1,13 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.3.0-blue)
+![version](https://img.shields.io/badge/version-0.3.8-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
-**用一條 USB-C 線，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
+**透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
 
 > 目前狀態：`start` 可一鍵開啟 DeX 視窗，`doctor` 可檢查電腦端工具、手機連線、USB 速度與 One UI 版本，`config` 可查看設定，`start --watch` 可在斷線後自動重連，`install-desktop` 可建立應用程式選單捷徑；
-> 以上功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**，rpm／deb 安裝包附的選單捷徑也已在實體主機確認，細節見「[實機驗收清單](#實機驗收清單)」。
+> Wi-Fi 支援新增 `pair`、`connect` 與 `start --wifi`，無線功能尚待實機驗收。
+> 既有 USB 功能都已在實機（Galaxy S23、One UI 8.5、scrcpy 5.0.1）**驗收通過**，rpm／deb 安裝包附的選單捷徑也已在實體主機確認，細節見「[實機驗收清單](#實機驗收清單)」。
 > 版號只寫在 `Cargo.toml`，用 `dex2pc --version` 查看。
 
 ## 運作方式
@@ -25,17 +26,17 @@ flowchart LR
     DEX2PC -- "1. adb 檢查手機、One UI、USB 速度" --> PHONE
     DEX2PC -- "2. 啟動 scrcpy --new-display" --> WIN
     VD -- "3. 畫面" --> SERVER
-    SERVER -- "4. H.264/H.265 影像串流<br/>USB-C 線（ADB 資料通道）" --> WIN
+    SERVER -- "4. H.264/H.265 影像串流<br/>USB-C 線或 Wi-Fi（ADB 資料通道）" --> WIN
     KM -- "5. 點擊、捲動、打字" --> WIN
-    WIN -- "6. 鍵鼠事件<br/>同一條 USB-C 線" --> SERVER
+    WIN -- "6. 鍵鼠事件<br/>同一條 USB-C 線或 Wi-Fi" --> SERVER
     SERVER -- "7. 注入輸入" --> VD
 ```
 
-1. **dex2pc** 經 adb 確認手機已授權、是 One UI 8 以上、USB 速度足夠
+1. **dex2pc** 使用 USB adb，或先連接 Wi-Fi adb，再確認手機已授權、是 One UI 8 以上；USB 模式另外診斷連線速度
 2. 檢查通過後啟動 **scrcpy**，在手機上建立**虛擬顯示器**，DeX 桌面跑在上面
-3. 手機把畫面壓成**影片串流**，經 USB-C 線的資料通道傳回電腦，顯示成一個視窗
+3. 手機把畫面壓成**影片串流**，經 USB-C 線或 Wi-Fi 的 ADB 資料通道傳回電腦，顯示成一個視窗
 4. 在視窗裡的**鍵盤滑鼠操作**由 scrcpy 送回手機，所以用電腦的鍵鼠就能直接操作 DeX
-5. **關閉視窗**就結束；`--watch` 時拔線後手機接回來會自動重新開啟
+5. **關閉視窗**就結束；`--watch` 時 USB 等裝置接回，Wi-Fi 則重試 `adb connect`，連線恢復後自動重新開啟
 
 ## 需求
 
@@ -43,10 +44,12 @@ flowchart LR
 - **手機**：Samsung，**One UI 8 以上**（DeX 改建在 Android 16 Desktop Mode 上，才能跑在虛擬顯示器）
 - **adb**：Fedora `sudo dnf install android-tools`；Debian / Ubuntu `sudo apt install adb`（用安裝包時會自動裝）
 - **scrcpy 3.2 以上**（需要 `--new-display` 與 `--display-ime-policy`）：Fedora `sudo dnf copr enable zeno/scrcpy && sudo dnf install scrcpy`；Debian / Ubuntu 見下方 deb 安裝
-- **支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）
+- USB 模式需要**支援資料傳輸的 USB-C 線**（有些線只能充電，接上後 `adb devices` 會看不到手機）；Wi-Fi 模式需要手機與電腦之間可互通的網路
 - 從原始碼建置才需要 Rust（cargo）；用安裝包不需要
 
 ## 安裝
+
+GUI 需要系統中文字型；rpm／deb 會強制相依並自動安裝。自行編譯時，Fedora 請執行 `sudo dnf install google-noto-sans-cjk-fonts`，Debian／Ubuntu 請執行 `sudo apt install fonts-noto-cjk`。程式不內附字型，啟動時先透過 fontconfig 尋找繁中字型，再檢查常見路徑；找不到時仍可啟動，並顯示英文安裝提示。
 
 三種方式擇一：**rpm 安裝包**（Fedora x86_64）、**deb 安裝包**（Debian 13 / Ubuntu 26.04 以上，amd64），或 **`cargo install`**（從原始碼，其他發行版）。
 
@@ -145,12 +148,11 @@ dex2pc install-desktop     # 選用：在應用程式選單加入「Samsung DeX�
 
 `~/.cargo/bin` 要在 `PATH` 裡（用 rustup 安裝 Rust 時預設會加）。adb 與 scrcpy 要自己裝，見上面的「需求」。
 
-**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它等同執行 `dex2pc start`。
+**應用程式選單捷徑**（`cargo install` 才需要；rpm 已經附好）：`dex2pc install-desktop` 會建立 `~/.local/share/applications/dex2pc.desktop`（依 `XDG_DATA_HOME`），點它開啟 `dex2pc gui`。
 
 - 捷徑記錄的是**執行指令當下的 dex2pc 絕對路徑**，所以請在 `cargo install` 之後用 `dex2pc install-desktop` 建立，不要用 `cargo run`（會指向 `target/` 裡的檔案）
 - 重複執行只會覆寫同一個檔案；移除用 **`dex2pc install-desktop --uninstall`**
-- 捷徑沒有終端機，**看不到錯誤訊息**；點了沒反應時，在終端機跑 `dex2pc doctor` 看原因
-- 捷徑不加 `--watch`：沒有終端機時，手機一直沒接回來會在背景一直等，使用者看不到也關不掉
+- 捷徑開啟圖形設定與工具列，可查看錯誤、開啟或停止投影；CLI 仍可獨立使用
 
 ## 快速開始
 
@@ -190,6 +192,101 @@ scrcpy 結束後虛擬顯示器也跟著移除。
 
 > ⚠️ 其他機型若開出的視窗是空白或只有一般手機畫面、不是 DeX，
 > 請回報手機型號與 One UI 版本，以及 `adb shell settings list global | grep -i -E 'desktop|freeform'` 的輸出。
+
+## 圖形介面與工具列
+
+安裝 rpm／deb 後，從選單點「Samsung DeX」，或執行：
+
+```bash
+dex2pc gui
+```
+
+首次開啟只有 **USB 連線** 與 **無線連線** 兩張選擇卡片，整個 GUI 都不需要輸入 IP、埠號或配對碼。
+
+- **USB**：接上支援資料傳輸的 USB 線，在手機允許 USB 偵錯；程式在背景有限次數偵測，找到唯一一台已授權手機後儲存並自動開啟 DeX。若未授權或有多台手機，卡片會提示；按「返回」可取消。最多 60 次偵測，每次指令上限兩秒、間隔一秒，最多約 179 秒。
+- **Wi-Fi**：手機與電腦連到可互通、允許 mDNS 的同一 Wi-Fi。在手機進入「開發人員選項 → 無線偵錯 → 使用 QR 圖碼配對裝置」，掃描畫面即時產生的 QR 圖碼；配對後自動探索連線埠、儲存並開啟 DeX。QR 密碼只用於當次配對，不寫入設定或日誌；按「返回」可取消。
+
+設定完成後，每次啟動顯示手機卡片、連線方式、狀態圓點及藍色「開啟 DeX」按鈕，**不會自動投影**。Wi-Fi 每次開啟會先探索 mDNS，優先使用記住的手機或 IP，自動更新連線埠；最多五次掃描（每次上限兩秒、間隔半秒）。找不到時只提供「重新掃描」與「重新配對」；重新配對會產生新的 QR 圖碼。需要手動位址或互動配對時，仍可使用原有 CLI `dex2pc connect IP:PORT`、`dex2pc pair IP:PORT`。
+
+開始投影且工具列可用時，視窗自動隱藏到工具列。右鍵選單依序為：開啟／停止 DeX、畫質（高／平衡／低）、語言（繁體中文／English）、清除連線設定、顯示視窗、結束。齒輪設定頁集中畫質、語言、清除設定及詳細紀錄；語言切換立即套用到視窗與工具列，畫質在下次啟動投影生效。缺少工具時才顯示可複製的安裝指令，錯誤直接顯示在卡片。介面跟隨系統深色／淺色主題，並保留系統 CJK 字型。
+
+**清除連線設定**會先停止投影與偵測，在有儲存位址時執行電腦端 `adb disconnect`，再移除 `config.toml` 的 `mode` 與 `wifi_address`，保留畫質、語言及其他選項，回到選擇卡片。**不會刪除手機端的配對紀錄**；若要移除，請自行到手機的無線偵錯頁面操作。
+
+GUI 設定使用 `mode = "usb" | "wifi"`、`quality = "high" | "balanced" | "low"`（16M／8M／4M），以及 `language = "zh-TW" | "en"`。未指定語言時，先看非空 `LC_ALL`，再看 `LANG`：以 `zh` 開頭使用繁體中文，其他使用 English。GUI 語言與畫質不改變 CLI 訊息或參數；CLI 沿用 `video_bit_rate`。手機服務識別與型號另存在同目錄的 `gui-device.toml`，CLI 不讀取此檔。QR 編碼使用關閉預設功能的純 Rust `qrcode`，由 egui 直接繪製，不增加影像或系統執行期依賴。
+
+投影使用 watch 模式；Wi-Fi 初次連線失敗會顯示原因，連續三次未恢復有效連線會停止並顯示處理方式，正常暫時斷線仍可重連。「停止」會立即終止正在連線或投影的子行程。CLI watch 保留五次上限。
+
+關閉視窗仍會常駐工具列，請從選單按「結束」。再次啟動只顯示既有視窗；單一實例透過 `$XDG_RUNTIME_DIR/dex2pc/gui.sock` 溝通，未設定 runtime 時使用設定目錄下的 runtime 子目錄。沒有 StatusNotifier 工具列支援時，投影保持視窗可見，關窗即停止並退出。
+
+**需要實機驗收（下一個測試版）**：
+
+- [ ] USB：未授權提示、授權後自動開啟、兩台手機提示、返回取消、逾時後可重試。
+- [ ] Wi-Fi：QR 配對後自動連線並投影；返回能立即取消；重新配對顯示新的 QR。
+- [ ] 手機重開機或連接埠改變後，只按開啟 DeX 即恢復；多台手機時選記住的裝置。
+- [ ] 關閉無線偵錯或阻擋 mDNS，有限時間後顯示原因，只有重新掃描與重新配對備援。
+- [ ] 有工具列時開始投影會隱藏視窗；可從選單停止、改畫質、顯示視窗或結束。
+- [ ] 繁體中文／English 切換立即更新視窗與工具列，重開後保留語言與畫質。
+- [ ] 清除設定停止投影、保留畫質與語言、回到選擇畫面；手機端配對仍保留。
+- [ ] 重開程式顯示主畫面但不自動投影；關窗常駐、單一實例、無工具列退回視窗正常。
+
+**GNOME** 需要 AppIndicator 擴充套件。Fedora：
+
+```bash
+sudo dnf install gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+
+Ubuntu／Debian GNOME：
+
+```bash
+sudo apt install gnome-shell-extension-appindicator
+gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+```
+
+安裝並啟用後請**登出再登入**。KDE Plasma 通常已支援 StatusNotifierItem。圖示為專案原創，沒有 Samsung 商標。套件會安裝 OpenGL、X11／Wayland 與中文字型依賴；自行編譯需 Rust 1.88 以上，`cargo install` 使用者亦需安裝這些執行期套件及 Noto CJK 字型。
+
+## 無線投影
+
+Wi-Fi 模式仍是 **adb → 環境檢查 → scrcpy --new-display**。手機不會主動搜尋到電腦；這不是 Samsung 原生 Wireless DeX／Miracast，請在電腦終端執行指令。
+
+**建議先從 USB 切換**，可跳過無線配對。先讓手機與電腦連上可互通的 Wi-Fi 網路，接上 USB 並完成 USB 偵錯授權，再切換到 TCP 5555（需信任目前網路）：
+
+```bash
+dex2pc connect
+# 多台 USB 手機時：dex2pc connect --serial R5CW1234ABC
+# 成功後可拔除 USB 線
+dex2pc start --wifi
+```
+
+切換時先讀取手機 wlan0 的 IP，再執行 `adb tcpip 5555`；這個指令會重啟手機 adbd，所以連線最多嘗試三次，失敗間隔一秒。讀不到 IP 時不切換，請先確認手機 Wi-Fi 已連線。`dex2pc connect IP:PORT` 與 `start --wifi` 仍只嘗試一次初始連線。
+
+若不能接 USB，也可以使用手機的無線偵錯配對：
+
+1. 在手機「設定 → 開發人員選項」開啟「無線偵錯」。
+2. 點「使用配對碼配對裝置」，把畫面的配對 IP 與埠填入 `pair`；配對碼由 adb 互動詢問。
+3. 回到無線偵錯主畫面，把「IP 位址與通訊埠」填入 `connect`。**連線埠與配對埠通常不同**。
+
+```bash
+dex2pc pair 192.168.1.20:37001
+dex2pc connect 192.168.1.20:39501
+dex2pc start --wifi
+```
+
+配對失敗時，請重新開啟手機配對視窗，使用**新的配對碼與埠號**，並執行 `adb kill-server` 後重試。Fedora／發行版 adb 有已知配對失敗，例如 `protocol fault (couldn't read status message)`；可改用 [Google 官方 platform-tools](https://developer.android.com/tools/releases/platform-tools)，確認 PATH 使用該版本的 adb；也可接 USB 執行 `dex2pc connect` 跳過配對。
+
+成功連線會把 `wifi_address` 存到設定檔，保留其他欄位（不保留註解）。位址只接受 IPv4 或 ASCII DNS 主機名加十進位埠號 1–65535，例如 `phone.local:5555`；不接受 IPv6、空白、底線或以連字號開頭／結尾的主機名標籤。
+
+手動指定地址會覆蓋此次啟動使用的設定值；`--wifi` 與 `--serial` 互斥。`--dry-run` 不執行任何外部指令，僅印出含無線序號的 scrcpy 指令：
+
+```bash
+dex2pc start --wifi 192.168.1.20:5555 --dry-run
+dex2pc start --wifi --watch
+dex2pc start --wifi --video-bit-rate 4M
+```
+
+Wi-Fi 斷線約在 15–20 秒內偵測到；加上 `--watch` 會關閉凍結的視窗並嘗試重新連線。
+
+Wi-Fi 較慢時可降低 `--video-bit-rate`。`--watch` 斷線後改用 `adb connect`，每次失敗間隔 2 秒，連續 5 次失敗放棄；按 Ctrl+C 結束。手機重新連網、重開機或重新開啟無線偵錯後，IP／埠可能改變，請重新執行 `connect IP:PORT`。
 
 ## 建置與執行
 
@@ -258,6 +355,13 @@ cargo run --example sync_version_badge
 - [x] **點擊開出視窗**：接上手機後點選單的「Samsung DeX」，開出 DeX 視窗，鍵盤滑鼠可以操作
 - [x] **移除**：`sudo dnf remove dex2pc` / `sudo apt remove dex2pc` 後，選單的「Samsung DeX」消失，`dex2pc` 指令也找不到
 
+無線功能尚待實機驗收：
+
+- [ ] 無線偵錯配對：`dex2pc pair IP:PORT` 能互動輸入配對碼
+- [ ] USB 切換：`dex2pc connect` 能取得手機 Wi-Fi IP 並儲存連線位址
+- [ ] 拔除 USB 後 `dex2pc start --wifi` 開出 DeX，鍵盤滑鼠可操作
+- [ ] Wi-Fi 斷線後 `--watch` 自動重連；Ctrl+C 可停止
+
 ## 頻寬：USB 2.0 就夠嗎？
 
 **夠。** 畫面是壓縮後的影片串流，不是原始畫面：
@@ -288,3 +392,16 @@ cargo run --example sync_version_badge
 **不需要在手機裝 App，也不需要 root**。scrcpy 3.0 起的 `--new-display` 能在手機上建立虛擬顯示器（dex2pc 另外用到 3.2 起才有的 `--display-ime-policy`，所以要求 3.2 以上），One UI 8 起 DeX 會直接跑在上面（已在實機確認，見上方「手機端需要另外設定嗎？」）。
 
 dex2pc **不重寫**這些部分，只負責檢查環境、組好 scrcpy 參數、一鍵啟動。
+
+### GUI／工具列實機驗收（0.3.3）
+
+- [ ] GUI USB：未授權提示、自動重試、授權後開啟 DeX 與鍵鼠操作
+- [ ] GUI Wi-Fi：QR 配對、自動探索與開啟 DeX
+- [ ] 停止可關閉 scrcpy；結束可停止並退出
+- [ ] 重開程式記住連線方式、畫質、Wi-Fi 位址
+- [ ] 工具列：開啟／停止、USB／Wi-Fi、各畫質、切換到 Wi-Fi、設定視窗、結束
+- [ ] 四種圖示與 tooltip：未連線、連線中、投影中、錯誤
+- [ ] 設定完成只顯示工具列，關閉視窗後仍常駐
+- [ ] 第二次啟動只顯示既有視窗；舊 socket 可恢復
+- [ ] 無工具列 host 時退回純視窗，關閉視窗會停止並退出
+- [ ] 補測 0.3.2：Wi-Fi 開關後約 15–20 秒內關閉凍結視窗，watch 自動重連；Ctrl+C／GUI 停止可中止

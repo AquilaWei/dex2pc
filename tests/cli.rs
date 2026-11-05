@@ -380,10 +380,7 @@ fn install_desktop_writes_entry_execing_this_binary_start() {
 
     assert!(output.status.success());
     let entry = std::fs::read_to_string(dir.path().join("applications/dex2pc.desktop")).unwrap();
-    assert!(entry.contains(&format!(
-        "Exec=\"{}\" start\n",
-        env!("CARGO_BIN_EXE_dex2pc")
-    )));
+    assert!(entry.contains(&format!("Exec=\"{}\" gui\n", env!("CARGO_BIN_EXE_dex2pc"))));
 }
 
 #[test]
@@ -404,4 +401,144 @@ fn install_desktop_uninstall_removes_entry() {
 
     assert!(output.status.success());
     assert!(!dir.path().join("applications/dex2pc.desktop").exists());
+}
+
+#[test]
+fn wifi_dry_run_with_empty_path_prints_network_serial_without_external_commands() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--wifi", "192.168.1.20:5555", "--dry-run"])
+        .env("PATH", "")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap(),
+        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+    );
+}
+#[test]
+fn wifi_without_value_uses_saved_address() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(
+        dir.path().join("dex2pc/config.toml"),
+        "wifi_address = 'phone.local:5555'\n",
+    )
+    .unwrap();
+    let output = dex2pc()
+        .args(["start", "--wifi", "--dry-run"])
+        .env("PATH", "")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("--serial=phone.local:5555")
+    );
+}
+#[test]
+fn wifi_without_saved_address_reports_missing_address() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--wifi", "--dry-run"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("未設定 Wi-Fi 位址")
+    );
+}
+#[test]
+fn wifi_and_serial_are_rejected_together() {
+    let output = dex2pc()
+        .args([
+            "start",
+            "--wifi",
+            "phone:5555",
+            "--serial",
+            "USB",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}
+#[test]
+fn invalid_pair_address_is_rejected_before_adb() {
+    let output = dex2pc()
+        .args(["pair", "phone:0"])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("無效位址")
+    );
+}
+#[test]
+fn invalid_connect_address_is_rejected_before_adb() {
+    let output = dex2pc()
+        .args(["connect", "phone:65536"])
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}
+#[test]
+fn invalid_saved_wifi_address_reports_path_and_field() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(
+        dir.path().join("dex2pc/config.toml"),
+        "wifi_address = 'phone:0'\n",
+    )
+    .unwrap();
+    let output = dex2pc()
+        .arg("config")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("dex2pc/config.toml 的欄位 wifi_address"));
+}
+#[test]
+fn config_without_wifi_address_shows_unset() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .arg("config")
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("wifi_address = （未設定）")
+    );
+}
+
+#[test]
+fn gui_help_does_not_need_a_display_server() {
+    let output = dex2pc()
+        .args(["gui", "--help"])
+        .env_remove("DISPLAY")
+        .env_remove("WAYLAND_DISPLAY")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("dex2pc gui")
+    );
 }

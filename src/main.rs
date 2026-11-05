@@ -3,10 +3,13 @@ mod config;
 mod desktop;
 mod device;
 mod doctor;
+mod gui;
+mod preferences;
 mod runner;
 mod scrcpy;
 mod start;
 mod usb;
+mod wifi;
 
 use std::env;
 use std::io;
@@ -17,7 +20,7 @@ use clap::{Parser, Subcommand};
 
 use crate::runner::SystemRunner;
 
-/// 透過 USB-C 線把 Samsung DeX 以視窗形式顯示在 Linux 電腦上（底層使用 scrcpy）
+/// 透過 USB-C 線或 Wi-Fi 把 Samsung DeX 以視窗形式顯示在 Linux 電腦上（底層使用 scrcpy）
 #[derive(Parser)]
 // `version` 不給值時 clap 取 CARGO_PKG_VERSION，版號只寫在 Cargo.toml
 #[command(name = "dex2pc", version)]
@@ -28,6 +31,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// 圖形設定精靈與工具列
+    Gui,
+    /// 使用手機「無線偵錯」顯示的配對位址，配對碼由 adb 詢問
+    Pair {
+        #[arg(value_parser = wifi::validate)]
+        address: String,
+    },
+    /// 連接無線 adb 並儲存位址；省略位址時從 USB 切換
+    Connect {
+        #[arg(value_parser = wifi::validate)]
+        address: Option<String>,
+        /// 從 USB 切換時選擇手機
+        #[arg(long, short, conflicts_with = "address")]
+        serial: Option<String>,
+    },
     /// 檢查 adb 與 scrcpy（3.2 以上）是否就緒、手機是否已連接並授權、是否為 One UI 8 以上的 Samsung，缺少時印出 Fedora 的安裝指令
     Doctor {
         /// 要使用的裝置序號（adb devices 列出的第一欄）；只連一台時可省略
@@ -39,6 +57,11 @@ enum Command {
         /// 要使用的裝置序號（adb devices 列出的第一欄）；只連一台時可省略
         #[arg(long, short)]
         serial: Option<String>,
+        /// 使用 Wi-Fi 位址；省略值時讀取設定檔 `wifi_address`，與 --serial 互斥
+        #[arg(long, num_args = 0..=1, conflicts_with = "serial", value_parser = wifi::validate)]
+        // clap 用三態區分未給參數、使用設定值、指定地址。
+        #[allow(clippy::option_option)]
+        wifi: Option<Option<String>>,
         /// 只印出會執行的 scrcpy 指令，不檢查環境也不執行任何外部指令
         #[arg(long)]
         dry_run: bool,
@@ -56,7 +79,7 @@ enum Command {
         #[command(flatten)]
         overrides: config::Overrides,
     },
-    /// 建立應用程式選單捷徑 dex2pc.desktop（放在 XDG_DATA_HOME 下的 applications，未設定時用 ~/.local/share/applications），點它等同執行 dex2pc start
+    /// 建立應用程式選單捷徑 dex2pc.desktop（放在 XDG_DATA_HOME 下的 applications，未設定時用 ~/.local/share/applications），點它開啟 dex2pc gui
     InstallDesktop {
         /// 刪除已建立的捷徑
         #[arg(long)]
@@ -67,6 +90,29 @@ enum Command {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.command {
+        Command::Gui => match gui::run() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::Pair { address } => match wifi::pair(&SystemRunner, &address, &mut io::stderr()) {
+            Ok(code) => ExitCode::from(code),
+            Err(err) => {
+                eprintln!("dex2pc: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::Connect { address, serial } => {
+            match connect(address.as_deref(), serial.as_deref()) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(err) => {
+                    eprintln!("dex2pc: {err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
         Command::Doctor { serial } => {
             match doctor::run(
                 &SystemRunner,
@@ -85,9 +131,10 @@ fn main() -> ExitCode {
         Command::Start {
             serial,
             dry_run,
+            wifi,
             watch,
             overrides,
-        } => match start(serial.as_deref(), dry_run, watch, overrides) {
+        } => match start(serial.as_deref(), wifi, dry_run, watch, overrides) {
             Ok(code) => ExitCode::from(code),
             Err(err) => {
                 eprintln!("dex2pc: {err}");
@@ -112,17 +159,37 @@ fn main() -> ExitCode {
 }
 
 /// 讀設定檔並套用 CLI 覆寫後啟動；回傳 dex2pc 的 exit code（scrcpy 失敗時沿用它的 code）。
+#[allow(clippy::option_option)] // 保留 clap 的三態，避免把 USB 與設定檔 Wi-Fi 混淆。
 fn start(
     serial: Option<&str>,
+    wifi: Option<Option<String>>,
     dry_run: bool,
     watch: bool,
     overrides: config::Overrides,
 ) -> Result<u8, Box<dyn std::error::Error>> {
     let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
     let options = overrides.apply(config::load(&path)?.unwrap_or_default());
+    let wireless = wifi
+        .map(|address| {
+            address
+                .or_else(|| options.wifi_address.clone())
+                .ok_or("未設定 Wi-Fi 位址：請指定 --wifi IP:PORT 或先執行 dex2pc connect IP:PORT")
+        })
+        .transpose()?;
+    let serial = wireless.as_deref().or(serial);
     if dry_run {
         start::dry_run(&options, serial, &mut io::stdout())?;
         return Ok(0);
+    }
+    if let Some(address) = wireless.as_deref() {
+        return Ok(start::run_wifi(
+            &SystemRunner,
+            &options,
+            address,
+            watch.then(start::Watch::default).as_ref(),
+            Path::new("/sys"),
+            &mut io::stdout(),
+        )?);
     }
     Ok(start::run(
         &SystemRunner,
@@ -147,6 +214,20 @@ fn show_config(
     let from_file = loaded.is_some();
     let options = overrides.apply(loaded.unwrap_or_default());
     config::show(&mut io::stdout(), &path, from_file, &options)?;
+    println!(
+        "wifi_address = {}",
+        options.wifi_address.as_deref().unwrap_or("（未設定）")
+    );
+    println!(
+        "mode = {}",
+        options.mode.map_or("（未設定）".into(), |m| m.to_string())
+    );
+    println!(
+        "quality = {}",
+        options
+            .quality
+            .map_or("（未設定）".into(), |q| q.to_string())
+    );
     Ok(())
 }
 
@@ -165,5 +246,19 @@ fn install_desktop(uninstall: bool) -> Result<(), Box<dyn std::error::Error>> {
     // 捷徑寫入目前執行檔的絕對路徑；用 cargo run 執行時會指向 target/ 裡的檔案
     let path = desktop::install(&dir, &env::current_exe()?)?;
     println!("已建立 {}", path.display());
+    Ok(())
+}
+
+/// 只在 adb 確認連線後才儲存位址；檔案或命令失敗時保留錯誤供 CLI 回報。
+fn connect(address: Option<&str>, serial: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config::path(env::var_os("XDG_CONFIG_HOME"), env::var_os("HOME"))?;
+    wifi::connect_and_save(
+        &SystemRunner,
+        address,
+        serial,
+        &path,
+        &mut std::thread::sleep,
+        &mut io::stdout(),
+    )?;
     Ok(())
 }

@@ -29,7 +29,29 @@ fn workflow(name: &str) -> String {
 
 #[test]
 fn check_tag_accepts_the_tag_that_matches_cargo_toml_minor_version() {
-    let output = check_tag("v0.3.0");
+    // PATCH checkout 不可發佈；用固定 MINOR fixture 保留正向驗證。
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("packaging/common")).unwrap();
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nversion = \"0.3.0\"\n",
+    )
+    .unwrap();
+    std::fs::copy(
+        Path::new(ROOT).join("packaging/check-tag.sh"),
+        dir.path().join("packaging/check-tag.sh"),
+    )
+    .unwrap();
+    std::fs::copy(
+        Path::new(ROOT).join("packaging/common/version.sh"),
+        dir.path().join("packaging/common/version.sh"),
+    )
+    .unwrap();
+    let output = Command::new("sh")
+        .arg(dir.path().join("packaging/check-tag.sh"))
+        .arg("v0.3.0")
+        .output()
+        .unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
 }
@@ -47,7 +69,7 @@ fn check_tag_rejects_a_minor_tag_that_differs_from_cargo_toml() {
     let output = check_tag("v0.4.0");
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("0.3.0"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("0.3.8"), "{}", stderr(&output));
 }
 
 #[test]

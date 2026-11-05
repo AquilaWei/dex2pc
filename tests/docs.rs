@@ -325,3 +325,43 @@ fn readme_real_host_checklist_covers_each_package_on_each_distro_with_checked_it
         );
     }
 }
+
+#[test]
+fn readme_wireless_section_explains_pair_connect_and_start() {
+    let wireless = section(README, "\n## 無線投影\n");
+    assert!(wireless.contains("dex2pc pair 192.168.1.20:37001"));
+    assert!(wireless.contains("dex2pc connect 192.168.1.20:39501"));
+    assert!(wireless.contains("dex2pc start --wifi"));
+    assert!(wireless.contains("手機不會主動搜尋到電腦"));
+    assert!(wireless.contains("--video-bit-rate 4M"));
+}
+#[test]
+fn readme_keeps_wireless_hardware_acceptance_unchecked() {
+    let checklist = section(README, "\n## 實機驗收清單\n");
+    assert!(checklist.contains("- [ ] 無線偵錯配對"));
+    assert!(checklist.contains("- [ ] USB 切換"));
+    assert!(checklist.contains("- [ ] 拔除 USB 後"));
+    assert!(checklist.contains("- [ ] Wi-Fi 斷線後"));
+}
+
+#[test]
+fn readme_recommends_usb_switch_before_wireless_pairing_and_explains_pair_failures() {
+    let wireless = section(README, "\n## 無線投影\n");
+    assert!(
+        wireless.find("dex2pc connect\n").unwrap()
+            < wireless.find("dex2pc pair 192.168.1.20:37001").unwrap()
+    );
+    assert!(wireless.contains("新的配對碼與埠號"));
+    assert!(wireless.contains("adb kill-server"));
+    assert!(wireless.contains("protocol fault (couldn't read status message)"));
+    assert!(wireless.contains("Google 官方 platform-tools"));
+}
+
+#[test]
+fn gui_documentation_explains_gnome_extension_and_lifecycle() {
+    let gui = section(README, "\n## 圖形介面與工具列\n");
+    assert!(gui.contains("sudo dnf install gnome-shell-extension-appindicator"));
+    assert!(gui.contains("gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com"));
+    assert!(gui.contains("登出再登入"));
+    assert!(gui.contains("沒有 StatusNotifier"));
+}

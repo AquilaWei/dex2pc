@@ -176,14 +176,14 @@ fn extract_rpm_fails_when_rpm2cpio_fails_even_if_cpio_succeeds() {
 }
 
 #[test]
-fn packaged_desktop_file_runs_dex2pc_start_and_validates() {
+fn packaged_desktop_file_runs_dex2pc_gui_and_validates() {
     let Some(extract) = extract_built_rpm() else {
         return;
     };
     let desktop = extract.path().join("usr/share/applications/dex2pc.desktop");
 
     let content = std::fs::read_to_string(&desktop).unwrap();
-    assert!(content.lines().any(|line| line == "Exec=dex2pc start"));
+    assert!(content.lines().any(|line| line == "Exec=dex2pc gui"));
     let validate = run("desktop-file-validate", &[desktop.to_str().unwrap()]);
     assert!(validate.status.success(), "{validate:?}");
 }
@@ -334,4 +334,13 @@ fn smoke_test_fails_when_no_container_engine_in_ci() {
             .unwrap()
             .contains("CI 不可略過")
     );
+}
+
+#[test]
+fn rpm_declares_noto_cjk_as_a_runtime_dependency() {
+    let spec = std::fs::read_to_string(Path::new(ROOT).join("packaging/rpm/dex2pc.spec")).unwrap();
+    assert!(spec.lines().any(|line| {
+        line.split_whitespace()
+            .eq(["Requires:", "google-noto-sans-cjk-fonts"])
+    }));
 }

@@ -99,6 +99,9 @@ echo "== dex2pc --version"
 actual=$(dex2pc --version)
 [ "$actual" = "dex2pc $version" ] || { echo "版本不符：$actual" >&2; exit 1; }
 
+echo "== dex2pc gui --help"
+dex2pc gui --help
+
 echo "== dex2pc doctor（容器裡沒有手機，預期退出碼 1 並回報找不到裝置）"
 set +e
 doctor=$(dex2pc doctor 2>&1)

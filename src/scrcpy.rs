@@ -143,6 +143,11 @@ impl std::error::Error for InvalidInputMode {}
 /// 啟動 DeX 視窗用的 scrcpy 選項；`Default` 是沒有設定檔與 CLI 參數時的內建值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
+    pub mode: Option<crate::preferences::Mode>,
+    pub quality: Option<crate::preferences::Quality>,
+    pub language: Option<crate::preferences::Language>,
+    /// 已儲存的無線 adb 位址；只有 --wifi 使用，不傳給 scrcpy。
+    pub wifi_address: Option<String>,
     pub resolution: Resolution,
     pub dpi: Dpi,
     pub window_title: String,
@@ -168,6 +173,10 @@ impl Default for Options {
             },
             dpi: Dpi(NonZeroU32::new(160).unwrap()),
             window_title: "Samsung DeX".to_string(),
+            wifi_address: None,
+            mode: None,
+            quality: None,
+            language: None,
             video_bit_rate: None,
             audio: true,
             keyboard: Some(InputMode::Uhid),
@@ -355,6 +364,10 @@ mod tests {
             audio: false,
             keyboard: Some(InputMode::Aoa),
             mouse: Some(InputMode::Sdk),
+            wifi_address: None,
+            mode: None,
+            quality: None,
+            language: None,
         };
 
         assert_eq!(

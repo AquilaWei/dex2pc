@@ -2,7 +2,7 @@
 Type=Application
 Name=Samsung DeX
 Comment=用 USB-C 線把 Samsung DeX 開成電腦上的視窗（dex2pc）
-Exec=dex2pc start
+Exec=dex2pc gui
 Icon=video-display
 Terminal=false
 Categories=Utility;

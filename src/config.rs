@@ -9,7 +9,7 @@ use clap::Args;
 use crate::scrcpy::{Dpi, InputMode, Options, Resolution};
 
 /// 設定檔中可用的欄位；出現其他欄位就報錯，避免打錯字的設定被默默忽略。
-const FIELDS: [&str; 7] = [
+const FIELDS: [&str; 11] = [
     "resolution",
     "dpi",
     "video_bit_rate",
@@ -17,6 +17,10 @@ const FIELDS: [&str; 7] = [
     "keyboard",
     "mouse",
     "window_title",
+    "wifi_address",
+    "mode",
+    "quality",
+    "language",
 ];
 
 /// 算出設定檔位置：`$XDG_CONFIG_HOME/dex2pc/config.toml`，沒設時用 `$HOME/.config/dex2pc/config.toml`。
@@ -116,6 +120,21 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
                 } else {
                     options.mouse = Some(mode);
                 }
+            }
+            "mode" | "quality" | "language" => {
+                let value = value.as_str().ok_or_else(|| invalid("要是字串".into()))?;
+                match field.as_str() {
+                    "mode" => options.mode = Some(value.parse().map_err(invalid)?),
+                    "quality" => options.quality = Some(value.parse().map_err(invalid)?),
+                    _ => options.language = Some(value.parse().map_err(invalid)?),
+                }
+            }
+            "wifi_address" => {
+                let address = value
+                    .as_str()
+                    .ok_or_else(|| invalid("要是字串".to_string()))?;
+                crate::wifi::validate(address).map_err(invalid)?;
+                options.wifi_address = Some(address.to_string());
             }
             "window_title" => {
                 options.window_title = value
@@ -533,7 +552,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "設定檔 /xdg/dex2pc/config.toml 有未知欄位 resolutoin；\
-             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title"
+             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language"
         );
     }
 
@@ -721,6 +740,115 @@ mod tests {
              keyboard = uhid\n\
              mouse = aoa\n\
              window_title = Samsung DeX\n"
+        );
+    }
+}
+
+/// GUI 只更新自己的欄位，保留 CLI 的其他選項；先驗證以免覆蓋損壞的設定。
+/// 建立目錄、讀寫或驗證失敗時回傳含路徑的錯誤。
+pub fn save_gui(path: &Path, options: &Options) -> io::Result<()> {
+    load(path).map_err(io::Error::other)?;
+    let mut table: toml::Table = match fs::read_to_string(path) {
+        Ok(text) => text.parse().map_err(io::Error::other)?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+        Err(err) => return Err(err),
+    };
+    if let Some(mode) = options.mode {
+        table.insert("mode".into(), mode.to_string().into());
+    } else {
+        table.remove("mode");
+    }
+    if let Some(language) = options.language {
+        table.insert("language".into(), language.as_str().into());
+    }
+    table.insert(
+        "quality".into(),
+        options.quality.unwrap_or_default().to_string().into(),
+    );
+    if let Some(address) = &options.wifi_address {
+        crate::wifi::validate(address).map_err(io::Error::other)?;
+        table.insert("wifi_address".into(), address.clone().into());
+    } else {
+        table.remove("wifi_address");
+    }
+    write_gui_table(path, &table)
+}
+
+/// Remove only computer-side connection preferences, preserving every other key.
+/// Invalid or unreadable config and atomic-write failures are returned to the caller.
+pub fn clear_gui_connection(path: &Path) -> io::Result<()> {
+    load(path).map_err(io::Error::other)?;
+    let mut table: toml::Table = match fs::read_to_string(path) {
+        Ok(text) => text.parse().map_err(io::Error::other)?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => toml::Table::new(),
+        Err(err) => return Err(err),
+    };
+    table.remove("mode");
+    table.remove("wifi_address");
+    write_gui_table(path, &table)
+}
+
+fn write_gui_table(path: &Path, table: &toml::Table) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let text = toml::to_string(table).map_err(io::Error::other)?;
+    // 同目錄 rename，避免中途結束時留下一半設定；GUI 的單一實例是唯一寫入者。
+    let temporary = path.with_extension("toml.tmp");
+    fs::write(&temporary, text)?;
+    fs::rename(&temporary, path)
+        .map_err(|err| io::Error::other(format!("{}：{err}", path.display())))
+}
+
+#[cfg(test)]
+mod gui_tests {
+    use super::*;
+    use crate::preferences::{Mode, Quality};
+    #[test]
+    fn invalid_mode_reports_path_and_field() {
+        assert_eq!(
+            parse("mode = 'auto'", Path::new("/cfg/config.toml"))
+                .unwrap_err()
+                .to_string(),
+            "設定檔 /cfg/config.toml 的欄位 mode：要是 usb 或 wifi"
+        );
+    }
+    #[test]
+    fn invalid_quality_reports_path_and_field() {
+        assert_eq!(
+            parse("quality = 'ultra'", Path::new("/cfg/config.toml"))
+                .unwrap_err()
+                .to_string(),
+            "設定檔 /cfg/config.toml 的欄位 quality：要是 high、balanced 或 low"
+        );
+    }
+    #[test]
+    fn gui_preferences_roundtrip_preserves_existing_resolution() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "resolution = '2560x1440'\n").unwrap();
+        save_gui(
+            &path,
+            &Options {
+                mode: Some(Mode::Wifi),
+                quality: Some(Quality::Low),
+                wifi_address: Some("phone:5555".into()),
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(path).unwrap(),
+            "mode = \"wifi\"\nquality = \"low\"\nresolution = \"2560x1440\"\nwifi_address = \"phone:5555\"\n"
+        );
+    }
+    #[test]
+    fn gui_quality_does_not_override_cli_bitrate() {
+        assert_eq!(
+            parse("quality = 'low'", Path::new("/cfg"))
+                .unwrap()
+                .video_bit_rate,
+            None
         );
     }
 }

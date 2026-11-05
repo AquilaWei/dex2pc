@@ -1,10 +1,10 @@
 use std::io::{self, Write};
 use std::path::Path;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::doctor;
-use crate::runner::CommandRunner;
+use crate::runner::{CommandOutput, CommandRunner, TimedOutput};
 use crate::scrcpy::{self, Options};
 
 /// 檢查不通過或 scrcpy 無法啟動、被訊號中止時的 exit code。
@@ -12,6 +12,9 @@ const FAILURE: u8 = 1;
 
 /// scrcpy 在連線建立後裝置才斷開時的 exit code（見 scrcpy man page 的 Exit status）。
 const SCRCPY_DISCONNECTED: i32 = 2;
+
+/// GUI 重連與連線探測共用三次失敗上限；CLI 的 Watch 上限保持不變。
+pub(crate) const WIFI_MAX_FAILURES: u32 = 3;
 
 /// `--watch` 的重連策略。
 pub struct Watch {
@@ -80,7 +83,18 @@ pub fn run(
     let args = scrcpy::build_args(options, Some(&selected));
     writeln!(out, "啟動：{}", command_line(&args))?;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let outcome = launch(runner, &arg_refs, out)?;
+    let outcome = if crate::wifi::validate(&selected).is_ok() {
+        launch_wifi(
+            runner,
+            &arg_refs,
+            &selected,
+            &Watchdog::default(),
+            &mut thread::sleep,
+            out,
+        )?
+    } else {
+        launch(runner, &arg_refs, out)?
+    };
     match watch {
         Some(watch) => keep_reconnecting(
             runner,
@@ -93,6 +107,22 @@ pub fn run(
         ),
         None => Ok(outcome.exit_code()),
     }
+}
+
+/// Wi-Fi 啟動先清除舊 transport 並建立 adb 連線，再交給相同的 doctor 與 scrcpy 流程。
+/// 連線失敗時不做環境檢查；只有寫入輸出失敗才回傳 I/O 錯誤。
+pub fn run_wifi(
+    runner: &dyn CommandRunner,
+    options: &Options,
+    address: &str,
+    watch: Option<&Watch>,
+    sysfs_root: &Path,
+    out: &mut dyn Write,
+) -> io::Result<u8> {
+    if crate::wifi::fresh_connect(runner, address, out)? != crate::wifi::Connection::Connected {
+        return Ok(FAILURE);
+    }
+    run(runner, options, Some(address), watch, sysfs_root, out)
 }
 
 /// watch 模式的主迴圈：從第一次啟動的結果開始，斷線就等裝置回來再重新啟動。
@@ -147,6 +177,32 @@ fn reconnect(
     sleep: &mut dyn FnMut(Duration),
     out: &mut dyn Write,
 ) -> io::Result<Outcome> {
+    if crate::wifi::validate(serial).is_ok() {
+        match crate::wifi::fresh_connect(runner, serial, out)? {
+            crate::wifi::Connection::Connected => {}
+            crate::wifi::Connection::Interrupted => return Ok(Outcome::Interrupted),
+            crate::wifi::Connection::Failed => return Ok(Outcome::Failed(FAILURE)),
+        }
+        sleep(delay);
+        writeln!(out, "裝置已重新連接，重新啟動 scrcpy")?;
+        let mut healthy = false;
+        let outcome = launch_wifi_checked(
+            runner,
+            args,
+            serial,
+            &Watchdog::default(),
+            sleep,
+            out,
+            &mut healthy,
+        )?;
+        // A reconnect that never passes a probe is still a failed attempt.
+        // Treating it as a recovered connection resets the budget forever.
+        return Ok(if matches!(outcome, Outcome::Disconnected) && !healthy {
+            Outcome::Failed(2)
+        } else {
+            outcome
+        });
+    }
     match runner.run("adb", &["-s", serial, "wait-for-device"]) {
         Ok(output) if output.success() => {}
         // Ctrl+C 也會送到 adb，此時不再重試
@@ -175,6 +231,10 @@ fn launch(runner: &dyn CommandRunner, args: &[&str], out: &mut dyn Write) -> io:
             return Ok(Outcome::Failed(FAILURE));
         }
     };
+    launch_outcome(&output, out)
+}
+
+fn launch_outcome(output: &CommandOutput, out: &mut dyn Write) -> io::Result<Outcome> {
     match output.code {
         Some(0) => Ok(Outcome::Closed),
         Some(code) => {
@@ -193,6 +253,87 @@ fn launch(runner: &dyn CommandRunner, args: &[&str], out: &mut dyn Write) -> io:
         None => {
             writeln!(out, "scrcpy 被訊號中止")?;
             Ok(Outcome::Interrupted)
+        }
+    }
+}
+
+/// 無線連線的探測策略；注入等待、逾時與上限，測試不必真的等候。
+struct Watchdog {
+    interval: Duration,
+    timeout: Duration,
+    max_failures: u32,
+}
+
+impl Default for Watchdog {
+    fn default() -> Self {
+        Self {
+            interval: Duration::from_secs(5),
+            timeout: Duration::from_secs(5),
+            max_failures: WIFI_MAX_FAILURES,
+        }
+    }
+}
+
+/// TCP 靜默斷線不一定讓 scrcpy 結束，以有限時間的 adb 探測避免永遠凍結。
+/// 探測被訊號中止時停止工作階段；I/O 錯誤與逾時皆計入連續失敗。
+fn launch_wifi(
+    runner: &dyn CommandRunner,
+    args: &[&str],
+    address: &str,
+    policy: &Watchdog,
+    sleep: &mut dyn FnMut(Duration),
+    out: &mut dyn Write,
+) -> io::Result<Outcome> {
+    launch_wifi_checked(runner, args, address, policy, sleep, out, &mut false)
+}
+
+fn launch_wifi_checked(
+    runner: &dyn CommandRunner,
+    args: &[&str],
+    address: &str,
+    policy: &Watchdog,
+    sleep: &mut dyn FnMut(Duration),
+    out: &mut dyn Write,
+    healthy: &mut bool,
+) -> io::Result<Outcome> {
+    let mut child = match runner.spawn("scrcpy", args) {
+        Ok(child) => child,
+        Err(err) => {
+            writeln!(out, "無法執行 scrcpy：{err}")?;
+            return Ok(Outcome::Failed(FAILURE));
+        }
+    };
+    let mut failures = 0;
+    let mut probe_elapsed = Duration::ZERO;
+    loop {
+        if let Some(output) = child.try_wait()? {
+            return launch_outcome(&output, out);
+        }
+        // 探測本身已花的時間也算入間隔，三次五秒逾時約二十秒內可偵測。
+        sleep(policy.interval.saturating_sub(probe_elapsed));
+        let probe_started = Instant::now();
+        if let Some(output) = child.try_wait()? {
+            return launch_outcome(&output, out);
+        }
+        match runner.run_timeout("adb", &["-s", address, "shell", "true"], policy.timeout) {
+            Ok(TimedOutput::Exited(output)) if output.code.is_none() => {
+                child.kill()?;
+                return Ok(Outcome::Interrupted);
+            }
+            Ok(TimedOutput::Exited(output)) if output.success() => {
+                failures = 0;
+                *healthy = true;
+            }
+            _ => failures += 1,
+        }
+        probe_elapsed = probe_started.elapsed();
+        if let Some(output) = child.try_wait()? {
+            return launch_outcome(&output, out);
+        }
+        if failures >= policy.max_failures {
+            writeln!(out, "Wi-Fi 連線無回應，關閉 scrcpy 並重新連接")?;
+            child.kill()?;
+            return Ok(Outcome::Disconnected);
         }
     }
 }
@@ -730,5 +871,576 @@ mod tests {
     #[test]
     fn shell_quote_wraps_empty_argument() {
         assert_eq!(shell_quote(""), "''");
+    }
+}
+
+#[cfg(test)]
+mod wifi_tests {
+    use super::*;
+    use crate::runner::CommandOutput;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+
+    struct FakeRunner {
+        replies: RefCell<VecDeque<CommandOutput>>,
+        calls: RefCell<Vec<String>>,
+    }
+    impl FakeRunner {
+        fn new(replies: &[(&str, Option<i32>)]) -> Self {
+            Self {
+                replies: RefCell::new(
+                    replies
+                        .iter()
+                        .map(|(text, code)| CommandOutput {
+                            code: *code,
+                            stdout: (*text).into(),
+                            stderr: String::new(),
+                        })
+                        .collect(),
+                ),
+                calls: RefCell::default(),
+            }
+        }
+    }
+    impl CommandRunner for FakeRunner {
+        fn spawn(
+            &self,
+            program: &str,
+            args: &[&str],
+        ) -> io::Result<Box<dyn crate::runner::RunningCommand>> {
+            Ok(Box::new(FinishedChild(Some(self.run(program, args)?))))
+        }
+        fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput> {
+            self.calls
+                .borrow_mut()
+                .push(format!("{program} {}", args.join(" ")));
+            Ok(self.replies.borrow_mut().pop_front().expect("非預期呼叫"))
+        }
+    }
+    struct FinishedChild(Option<CommandOutput>);
+    impl crate::runner::RunningCommand for FinishedChild {
+        fn try_wait(&mut self) -> io::Result<Option<CommandOutput>> {
+            Ok(self.0.take())
+        }
+        fn kill(&mut self) -> io::Result<()> {
+            panic!("已結束的子行程不應被停止")
+        }
+    }
+    #[test]
+    fn wifi_start_discards_stale_transport_before_connecting() {
+        let runner = FakeRunner::new(&[("cannot connect", Some(0)), ("cannot connect", Some(0))]);
+        run_wifi(
+            &runner,
+            &Options::default(),
+            "phone:5555",
+            None,
+            Path::new("/unused"),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
+    fn wifi_start_connects_before_doctor_and_launches_with_network_serial() {
+        let runner = FakeRunner::new(&[
+            ("", Some(0)),
+            ("connected to phone:5555", Some(0)),
+            ("Android Debug Bridge version 1.0.41", Some(0)),
+            ("scrcpy 3.3.1", Some(0)),
+            ("phone:5555 device", Some(0)),
+            (
+                "[ro.product.manufacturer]: [samsung]\n[ro.product.model]: [SM_S918B]\n[ro.build.version.sdk]: [36]\n[ro.build.version.oneui]: [80000]",
+                Some(0),
+            ),
+            ("", Some(0)),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            run_wifi(
+                &runner,
+                &Options::default(),
+                "phone:5555",
+                None,
+                dir.path(),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "adb version",
+                "scrcpy --version",
+                "adb devices -l",
+                "adb -s phone:5555 shell getprop",
+                "scrcpy --serial=phone:5555 --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
+            ]
+        );
+    }
+    #[test]
+    fn wifi_start_connect_failure_stops_before_doctor() {
+        let runner = FakeRunner::new(&[("", Some(0)), ("cannot connect", Some(0))]);
+        assert_eq!(
+            run_wifi(
+                &runner,
+                &Options::default(),
+                "phone:5555",
+                None,
+                Path::new("/unused"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
+    fn wifi_watch_reconnects_with_connect_instead_of_wait_for_device() {
+        let runner = FakeRunner::new(&[
+            ("", Some(0)),
+            ("connected to phone:5555", Some(0)),
+            ("", Some(0)),
+        ]);
+        let watch = Watch {
+            max_failures: 5,
+            retry_delay: Duration::from_secs(2),
+        };
+        let mut delays = Vec::new();
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &["--serial=phone:5555"],
+                "phone:5555",
+                &watch,
+                Outcome::Disconnected,
+                &mut |d| delays.push(d),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "scrcpy --serial=phone:5555"
+            ]
+        );
+        assert_eq!(delays, [Duration::from_secs(2)]);
+    }
+    #[test]
+    fn wifi_watch_stops_after_five_failed_connections() {
+        let runner = FakeRunner::new(&[
+            ("", Some(0)),
+            ("cannot connect", Some(0)),
+            ("", Some(0)),
+            ("cannot connect", Some(0)),
+            ("", Some(0)),
+            ("cannot connect", Some(0)),
+            ("", Some(0)),
+            ("cannot connect", Some(0)),
+            ("", Some(0)),
+            ("cannot connect", Some(0)),
+        ]);
+        let mut delays = Vec::new();
+        let mut out = Vec::new();
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch::default(),
+                Outcome::Disconnected,
+                &mut |d| delays.push(d),
+                &mut out
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "adb disconnect phone:5555",
+                "adb connect phone:5555"
+            ]
+        );
+        assert_eq!(
+            delays,
+            [
+                Duration::from_secs(2),
+                Duration::from_secs(2),
+                Duration::from_secs(2),
+                Duration::from_secs(2)
+            ]
+        );
+        assert!(
+            String::from_utf8(out)
+                .unwrap()
+                .contains("連續 5 次重新啟動失敗，放棄重連")
+        );
+    }
+    #[test]
+    fn wifi_watch_interrupted_connect_stops_without_retry() {
+        let runner = FakeRunner::new(&[("", Some(0)), ("", None)]);
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch::default(),
+                Outcome::Disconnected,
+                &mut |_| panic!("不應等待"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            ["adb disconnect phone:5555", "adb connect phone:5555"]
+        );
+    }
+    #[test]
+    fn wifi_start_interrupted_disconnect_stops_before_connect_and_doctor() {
+        let runner = FakeRunner::new(&[("", None)]);
+        assert_eq!(
+            run_wifi(
+                &runner,
+                &Options::default(),
+                "phone:5555",
+                None,
+                Path::new("/unused"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(*runner.calls.borrow(), ["adb disconnect phone:5555"]);
+    }
+    #[test]
+    fn wifi_watch_interrupted_disconnect_stops_without_retry() {
+        let runner = FakeRunner::new(&[("", None)]);
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch::default(),
+                Outcome::Disconnected,
+                &mut |_| panic!("不應等待"),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(*runner.calls.borrow(), ["adb disconnect phone:5555"]);
+    }
+}
+
+#[cfg(test)]
+mod watchdog_tests {
+    use super::*;
+    use crate::runner::RunningCommand;
+    use std::cell::{Cell, RefCell};
+    use std::collections::VecDeque;
+    use std::rc::Rc;
+
+    #[derive(Clone, Copy)]
+    enum Poll {
+        Running,
+        Exited(Option<i32>),
+    }
+    use Poll::{Exited, Running};
+
+    struct Child {
+        polls: VecDeque<Poll>,
+        killed: Rc<Cell<bool>>,
+    }
+    fn output(code: Option<i32>) -> CommandOutput {
+        CommandOutput {
+            code,
+            stdout: String::new(),
+            stderr: "測試訊息".into(),
+        }
+    }
+    impl RunningCommand for Child {
+        fn try_wait(&mut self) -> io::Result<Option<CommandOutput>> {
+            Ok(match self.polls.pop_front().expect("非預期輪詢") {
+                Running => None,
+                Exited(code) => Some(output(code)),
+            })
+        }
+        fn kill(&mut self) -> io::Result<()> {
+            self.killed.set(true);
+            Ok(())
+        }
+    }
+    struct Fake {
+        children: RefCell<VecDeque<Child>>,
+        probes: RefCell<VecDeque<TimedOutput>>,
+        calls: RefCell<Vec<String>>,
+    }
+    impl Fake {
+        fn new(polls: &[Poll], probes: Vec<TimedOutput>) -> (Self, Rc<Cell<bool>>) {
+            let killed = Rc::new(Cell::new(false));
+            (
+                Self {
+                    children: RefCell::new(VecDeque::from([Child {
+                        polls: polls.iter().copied().collect(),
+                        killed: killed.clone(),
+                    }])),
+                    probes: RefCell::new(probes.into()),
+                    calls: RefCell::default(),
+                },
+                killed,
+            )
+        }
+    }
+    impl CommandRunner for Fake {
+        fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput> {
+            self.calls
+                .borrow_mut()
+                .push(format!("{program} {}", args.join(" ")));
+            match (program, args) {
+                ("adb", ["disconnect", "phone:5555"]) => Ok(output(Some(0))),
+                ("adb", ["connect", "phone:5555"]) => Ok(CommandOutput {
+                    code: Some(0),
+                    stdout: "connected to phone:5555".into(),
+                    stderr: String::new(),
+                }),
+                _ => panic!("舊阻塞路徑會永遠等待；假 runner 禁止呼叫 run scrcpy"),
+            }
+        }
+        fn spawn(&self, program: &str, args: &[&str]) -> io::Result<Box<dyn RunningCommand>> {
+            self.calls
+                .borrow_mut()
+                .push(format!("spawn {program} {}", args.join(" ")));
+            Ok(Box::new(
+                self.children.borrow_mut().pop_front().expect("非預期啟動"),
+            ))
+        }
+        fn run_timeout(
+            &self,
+            program: &str,
+            args: &[&str],
+            timeout: Duration,
+        ) -> io::Result<TimedOutput> {
+            assert_eq!(program, "adb");
+            assert_eq!(args, ["-s", "phone:5555", "shell", "true"]);
+            assert_eq!(timeout, Duration::from_secs(5));
+            Ok(self.probes.borrow_mut().pop_front().expect("非預期探測"))
+        }
+    }
+    fn launch_fake(runner: &Fake) -> Outcome {
+        launch_wifi(
+            runner,
+            &[],
+            "phone:5555",
+            &Watchdog::default(),
+            &mut |_| {},
+            &mut Vec::new(),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn successful_probes_then_normal_exit_returns_zero_without_kill() {
+        let (runner, killed) = Fake::new(
+            &[Running, Running, Running, Exited(Some(0))],
+            vec![TimedOutput::Exited(output(Some(0)))],
+        );
+        assert_eq!(launch_fake(&runner).exit_code(), 0);
+        assert!(!killed.get());
+        assert!(runner.probes.borrow().is_empty());
+    }
+    #[test]
+    fn frozen_child_after_three_timeouts_is_killed_as_disconnected() {
+        let (runner, killed) = Fake::new(
+            &[
+                Running, Running, Running, Running, Running, Running, Running, Running, Running,
+            ],
+            vec![
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+            ],
+        );
+        assert!(matches!(launch_fake(&runner), Outcome::Disconnected));
+        assert!(killed.get());
+    }
+    #[test]
+    fn successful_probe_resets_two_previous_failures() {
+        let (runner, killed) = Fake::new(
+            &[
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Running,
+                Exited(Some(0)),
+            ],
+            vec![
+                TimedOutput::Exited(output(Some(1))),
+                TimedOutput::Exited(output(Some(1))),
+                TimedOutput::Exited(output(Some(0))),
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+            ],
+        );
+        assert_eq!(launch_fake(&runner).exit_code(), 0);
+        assert!(!killed.get());
+        assert!(runner.probes.borrow().is_empty());
+    }
+    #[test]
+    fn child_exits_two_without_probe_or_kill() {
+        let (runner, killed) = Fake::new(&[Exited(Some(2))], vec![]);
+        assert!(matches!(launch_fake(&runner), Outcome::Disconnected));
+        assert!(!killed.get());
+    }
+    #[test]
+    fn unhealthy_wifi_reconnects_stop_after_three_attempts() {
+        let (runner, _) = Fake::new(&[Exited(Some(2))], vec![]);
+        runner.children.borrow_mut().push_back(Child {
+            polls: VecDeque::from([Exited(Some(2))]),
+            killed: Rc::new(Cell::new(false)),
+        });
+        runner.children.borrow_mut().push_back(Child {
+            polls: VecDeque::from([Exited(Some(2))]),
+            killed: Rc::new(Cell::new(false)),
+        });
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch {
+                    max_failures: 3,
+                    retry_delay: Duration::ZERO
+                },
+                Outcome::Disconnected,
+                &mut |_| {},
+                &mut Vec::new(),
+            )
+            .unwrap(),
+            1
+        );
+    }
+    #[test]
+    fn watchdog_without_watch_returns_disconnected_code_two() {
+        let (runner, _) = Fake::new(
+            &[
+                Running, Running, Running, Running, Running, Running, Running, Running, Running,
+            ],
+            vec![
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+            ],
+        );
+        assert_eq!(launch_fake(&runner).exit_code(), 2);
+    }
+    #[test]
+    fn watchdog_disconnect_with_watch_connects_and_relaunches() {
+        let (runner, _) = Fake::new(
+            &[
+                Running, Running, Running, Running, Running, Running, Running, Running, Running,
+            ],
+            vec![
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+                TimedOutput::TimedOut,
+            ],
+        );
+        runner.children.borrow_mut().push_back(Child {
+            polls: VecDeque::from([Exited(Some(0))]),
+            killed: Rc::new(Cell::new(false)),
+        });
+        let first = launch_fake(&runner);
+        let mut delays = Vec::new();
+        assert_eq!(
+            keep_reconnecting(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watch::default(),
+                first,
+                &mut |d| delays.push(d),
+                &mut Vec::new()
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            *runner.calls.borrow(),
+            [
+                "spawn scrcpy ",
+                "adb disconnect phone:5555",
+                "adb connect phone:5555",
+                "spawn scrcpy "
+            ]
+        );
+        assert_eq!(delays, [Duration::from_secs(2)]);
+    }
+    #[test]
+    fn interrupted_probe_stops_and_kills_child_without_reconnecting() {
+        let (runner, killed) =
+            Fake::new(&[Running, Running], vec![TimedOutput::Exited(output(None))]);
+        assert!(matches!(launch_fake(&runner), Outcome::Interrupted));
+        assert!(killed.get());
+    }
+    #[test]
+    fn interrupted_child_stops_without_probing() {
+        let (runner, killed) = Fake::new(&[Exited(None)], vec![]);
+        assert!(matches!(launch_fake(&runner), Outcome::Interrupted));
+        assert!(!killed.get());
+    }
+    #[test]
+    fn child_failure_preserves_stderr() {
+        let (runner, _) = Fake::new(&[Exited(Some(1))], vec![]);
+        let mut out = Vec::new();
+        assert_eq!(
+            launch_wifi(
+                &runner,
+                &[],
+                "phone:5555",
+                &Watchdog::default(),
+                &mut |_| {},
+                &mut out
+            )
+            .unwrap()
+            .exit_code(),
+            1
+        );
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "scrcpy 以 exit code 1 結束：\n測試訊息\n"
+        );
     }
 }
