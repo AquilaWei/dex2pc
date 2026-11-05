@@ -192,7 +192,8 @@ CLI 與 GUI 預設在 scrcpy 建立顯示器後，以 `wm set-display-windowing-
 關閉投影時 scrcpy 會移除顯示器，重開及自動重連時重新設定。
 
 關閉此功能：`dex2pc start --no-freeform`，或在設定檔加入 `freeform = false`
-（也適用 GUI；下次開啟投影生效）。`dex2pc start --dry-run` 會說明啟動後的設定步驟，
+（也適用 GUI；下次開啟投影生效）。停用時會對同樣辨識出的唯一新顯示器明確設定 fullscreen（mode 1），
+避免 Android 依 uniqueId 保留先前的自由視窗模式；失敗時也會警告並繼續投影。`dex2pc start --dry-run` 會說明啟動後的設定步驟，
 不執行 adb 或修改手機。
 
 已在實機確認（2026-10-10）：**Galaxy S23（SM-S9180）、One UI 8.5（Android 16）、scrcpy 5.0.1**，

@@ -545,7 +545,7 @@ fn gui_help_does_not_need_a_display_server() {
 }
 
 #[test]
-fn no_freeform_dry_run_omits_display_setup() {
+fn no_freeform_dry_run_explains_fullscreen_reset() {
     let dir = tempfile::tempdir().unwrap();
     let output = dex2pc()
         .args(["start", "--dry-run", "--no-freeform"])
@@ -555,9 +555,9 @@ fn no_freeform_dry_run_omits_display_setup() {
         .unwrap();
     assert!(output.status.success());
     assert!(
-        !String::from_utf8(output.stdout)
+        String::from_utf8(output.stdout)
             .unwrap()
-            .contains("set-display-windowing-mode")
+            .contains("wm mode 1")
     );
 }
 

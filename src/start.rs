@@ -360,6 +360,11 @@ pub fn dry_run(options: &Options, serial: Option<&str>, out: &mut dyn Write) -> 
             out,
             "# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）"
         )?;
+    } else {
+        writeln!(
+            out,
+            "# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；失敗時警告並繼續投影。"
+        )?;
     }
     Ok(())
 }

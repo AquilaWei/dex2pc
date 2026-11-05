@@ -36,7 +36,7 @@ fn new_display(before: &BTreeSet<u32>, dump: &str) -> Result<Option<u32>, String
     }
 }
 
-fn mode_args(serial: &str, id: &str) -> Vec<String> {
+fn mode_args(serial: &str, id: &str, mode: &str) -> Vec<String> {
     [
         "-s",
         serial,
@@ -45,7 +45,7 @@ fn mode_args(serial: &str, id: &str) -> Vec<String> {
         "set-display-windowing-mode",
         "-d",
         id,
-        "5",
+        mode,
     ]
     .map(str::to_owned)
     .to_vec()
@@ -65,6 +65,18 @@ impl<'a> Projection<'a> {
             serial,
             enabled,
         }
+    }
+
+    fn report_mode(&self, out: &mut dyn Write) -> io::Result<()> {
+        writeln!(
+            out,
+            "DeX 視窗模式：{}",
+            if self.enabled {
+                "freeform"
+            } else {
+                "fullscreen"
+            }
+        )
     }
 
     fn adb(&self, args: &[&str]) -> Result<String, String> {
@@ -91,7 +103,14 @@ impl<'a> Projection<'a> {
         loop {
             let dump = self.adb(&["-s", self.serial, "shell", "dumpsys", "display"])?;
             if let Some(id) = new_display(before, &dump)? {
-                let args = mode_args(self.serial, &id.to_string());
+                // Android may retain per-uniqueId overrides; explicitly restore fullscreen when disabled.
+                let mode_id = if self.enabled { "5" } else { "1" };
+                let expected = if self.enabled {
+                    "freeform"
+                } else {
+                    "fullscreen"
+                };
+                let args = mode_args(self.serial, &id.to_string(), mode_id);
                 let refs: Vec<&str> = args.iter().map(String::as_str).collect();
                 self.adb(&refs)?;
                 let mode = self.adb(&[
@@ -103,8 +122,8 @@ impl<'a> Projection<'a> {
                     "-d",
                     &id.to_string(),
                 ])?;
-                if !mode.contains("display windowing mode=freeform") {
-                    return Err(format!("顯示器 {id} 未確認為 freeform：{}", mode.trim()));
+                if !mode.contains(&format!("display windowing mode={expected} ")) {
+                    return Err(format!("顯示器 {id} 未確認為 {expected}：{}", mode.trim()));
                 }
                 return Ok(());
             }
@@ -120,7 +139,7 @@ impl<'a> Projection<'a> {
 fn warning(out: &mut dyn Write, reason: &str) -> io::Result<()> {
     writeln!(
         out,
-        "警告：無法啟用 DeX 自由視窗：{reason}；投影繼續，app 可能使用全螢幕。可用 --no-freeform 或 freeform = false 關閉。"
+        "警告：無法設定 DeX 視窗模式：{reason}；投影繼續，app 可能保留原有模式。可用 --no-freeform 或 freeform = false 關閉自由視窗。"
     )
 }
 
@@ -140,9 +159,6 @@ impl CommandRunner for Projection<'_> {
         self.runner.run_timeout(program, args, timeout)
     }
     fn run_projection(&self, args: &[&str], out: &mut dyn Write) -> io::Result<CommandOutput> {
-        if !self.enabled {
-            return self.runner.run_projection(args, out);
-        }
         let before = match self.snapshot() {
             Ok(before) => before,
             Err(err) => {
@@ -152,7 +168,7 @@ impl CommandRunner for Projection<'_> {
         };
         let mut child = self.runner.spawn_projection(args, out)?;
         match self.configure(&before) {
-            Ok(()) => writeln!(out, "DeX 自由視窗已啟用")?,
+            Ok(()) => self.report_mode(out)?,
             Err(err) => warning(out, &err)?,
         }
         loop {
@@ -167,13 +183,10 @@ impl CommandRunner for Projection<'_> {
         args: &[&str],
         out: &mut dyn Write,
     ) -> io::Result<Box<dyn RunningCommand>> {
-        if !self.enabled {
-            return self.runner.spawn_projection(args, out);
-        }
         let before = self.snapshot();
         let child = self.runner.spawn_projection(args, out)?;
         match before.and_then(|before| self.configure(&before)) {
-            Ok(()) => writeln!(out, "DeX 自由視窗已啟用")?,
+            Ok(()) => self.report_mode(out)?,
             Err(err) => warning(out, &err)?,
         }
         Ok(child)
@@ -214,7 +227,7 @@ mod tests {
     #[test]
     fn freeform_command_targets_selected_serial_and_display() {
         assert_eq!(
-            mode_args("phone:5555", "82"),
+            mode_args("phone:5555", "82", "5"),
             [
                 "-s",
                 "phone:5555",
@@ -330,14 +343,25 @@ mod tests {
         assert!(String::from_utf8(out).unwrap().contains("投影繼續"));
     }
     #[test]
-    fn disabled_feature_never_calls_adb() {
-        let runner = Fake::new(vec![]);
+    fn disabled_feature_resets_a_persisted_display_mode_to_fullscreen() {
+        let runner = Fake::new(vec![
+            Ok(String::new()),
+            Ok(ONE.into()),
+            Ok(String::new()),
+            Ok("display windowing mode=fullscreen for displayId=82".into()),
+        ]);
         Projection::new(&runner, "phone", false)
             .run_projection(&["--new-display=1920x1080/160"], &mut Vec::new())
             .unwrap();
         assert_eq!(
             *runner.calls.borrow(),
-            ["scrcpy --new-display=1920x1080/160"]
+            [
+                "adb -s phone shell dumpsys display",
+                "scrcpy --new-display=1920x1080/160",
+                "adb -s phone shell dumpsys display",
+                "adb -s phone shell wm set-display-windowing-mode -d 82 1",
+                "adb -s phone shell wm get-display-windowing-mode -d 82"
+            ]
         );
     }
     #[test]
