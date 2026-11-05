@@ -9,7 +9,7 @@ use clap::Args;
 use crate::scrcpy::{Dpi, InputMode, Options, Resolution};
 
 /// 設定檔中可用的欄位；出現其他欄位就報錯，避免打錯字的設定被默默忽略。
-const FIELDS: [&str; 11] = [
+const FIELDS: [&str; 12] = [
     "resolution",
     "dpi",
     "video_bit_rate",
@@ -21,6 +21,7 @@ const FIELDS: [&str; 11] = [
     "mode",
     "quality",
     "language",
+    "freeform",
 ];
 
 /// 算出設定檔位置：`$XDG_CONFIG_HOME/dex2pc/config.toml`，沒設時用 `$HOME/.config/dex2pc/config.toml`。
@@ -104,6 +105,11 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
                         .to_string(),
                 );
             }
+            "freeform" => {
+                options.freeform = value
+                    .as_bool()
+                    .ok_or_else(|| invalid("要是 true 或 false".to_string()))?;
+            }
             "audio" => {
                 options.audio = value
                     .as_bool()
@@ -156,6 +162,9 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
 /// 可覆寫設定檔的 CLI 參數；沒給的參數沿用設定檔（或內建預設值）。
 #[derive(Debug, Default, Args)]
 pub struct Overrides {
+    /// 關閉 DeX 自由視窗（設定檔 freeform = false 也可關閉）
+    #[arg(long)]
+    pub no_freeform: bool,
     /// 虛擬顯示器解析度，例如 2560x1440
     #[arg(long)]
     pub resolution: Option<Resolution>,
@@ -197,6 +206,9 @@ impl Overrides {
         }
         if self.audio {
             options.audio = true;
+        }
+        if self.no_freeform {
+            options.freeform = false;
         }
         if self.no_audio {
             options.audio = false;
@@ -240,6 +252,7 @@ pub fn show(
         options.video_bit_rate.as_ref().unwrap_or(&scrcpy_default)
     )?;
     writeln!(out, "audio = {}", options.audio)?;
+    writeln!(out, "freeform = {}", options.freeform)?;
     writeln!(out, "keyboard = {}", mode(options.keyboard))?;
     writeln!(out, "mouse = {}", mode(options.mouse))?;
     writeln!(out, "window_title = {}", options.window_title)
@@ -552,7 +565,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "設定檔 /xdg/dex2pc/config.toml 有未知欄位 resolutoin；\
-             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language"
+             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language、freeform"
         );
     }
 
@@ -617,6 +630,7 @@ mod tests {
             video_bit_rate: Some("20M".to_string()),
             audio: false,
             no_audio: true,
+            no_freeform: false,
             keyboard: Some(InputMode::Uhid),
             mouse: Some(InputMode::Sdk),
             window_title: Some("DeX".to_string()),
@@ -705,6 +719,7 @@ mod tests {
              dpi = 160\n\
              video_bit_rate = （scrcpy 預設）\n\
              audio = true\n\
+             freeform = true\n\
              keyboard = uhid\n\
              mouse = （scrcpy 預設）\n\
              window_title = Samsung DeX\n"
@@ -737,6 +752,7 @@ mod tests {
              dpi = 160\n\
              video_bit_rate = 16M\n\
              audio = false\n\
+             freeform = true\n\
              keyboard = uhid\n\
              mouse = aoa\n\
              window_title = Samsung DeX\n"

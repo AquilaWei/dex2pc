@@ -42,6 +42,30 @@ pub trait CommandRunner {
     /// 程式有執行但以非 0 結束不算錯誤，由呼叫端看 `code` 判斷。
     fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput>;
 
+    /// 讓顯示器設定與 CLI／GUI 共用投影生命週期及警告輸出；預設沿用原本的阻塞執行方式。
+    ///
+    /// # Errors
+    /// 子行程啟動、監測或警告輸出寫入失敗時回傳 I/O 錯誤；顯示器設定失敗只警告並繼續投影。
+    fn run_projection(
+        &self,
+        args: &[&str],
+        _out: &mut dyn std::io::Write,
+    ) -> io::Result<CommandOutput> {
+        self.run("scrcpy", args)
+    }
+
+    /// 讓顯示器設定與可輪詢的投影子行程共用生命週期，供 Wi-Fi 探測與 GUI 停止操作使用。
+    ///
+    /// # Errors
+    /// 子行程啟動或警告輸出寫入失敗時回傳 I/O 錯誤；顯示器設定失敗只警告並保留投影。
+    fn spawn_projection(
+        &self,
+        args: &[&str],
+        _out: &mut dyn std::io::Write,
+    ) -> io::Result<Box<dyn RunningCommand>> {
+        self.spawn("scrcpy", args)
+    }
+
     /// 啟動可輪詢的行程，避免 Wi-Fi 斷線後永遠阻塞；無法啟動時回傳 I/O 錯誤。
     fn spawn(&self, _program: &str, _args: &[&str]) -> io::Result<Box<dyn RunningCommand>> {
         Err(io::Error::new(

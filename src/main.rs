@@ -3,6 +3,7 @@ mod config;
 mod desktop;
 mod device;
 mod doctor;
+mod freeform;
 mod gui;
 mod preferences;
 mod runner;
