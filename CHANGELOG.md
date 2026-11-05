@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 修正
+
+- CLI／GUI 預設將新建的 scrcpy DeX 顯示器切換為自由視窗，讓 app 可拖曳、縮放；不修改手機全域設定。可用設定檔 `freeform = false` 或 CLI `--no-freeform` 停用；不支援或顯示器辨識失敗時警告並繼續投影。Galaxy S23 的 display 指令與 task 模式已驗證，桌面拖曳與重開投影仍待使用者驗收。
+
 ## [0.3.8] - 2026-11-05
 
 ### 改善

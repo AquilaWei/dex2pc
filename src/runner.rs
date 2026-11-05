@@ -42,6 +42,25 @@ pub trait CommandRunner {
     /// 程式有執行但以非 0 結束不算錯誤，由呼叫端看 `code` 判斷。
     fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput>;
 
+    /// Projection hooks let optional display setup share CLI/GUI lifecycle and warnings.
+    /// Defaults preserve runners that do not need display setup.
+    fn run_projection(
+        &self,
+        args: &[&str],
+        _out: &mut dyn std::io::Write,
+    ) -> io::Result<CommandOutput> {
+        self.run("scrcpy", args)
+    }
+
+    /// Start projection without blocking its lifetime; spawn errors are returned.
+    fn spawn_projection(
+        &self,
+        args: &[&str],
+        _out: &mut dyn std::io::Write,
+    ) -> io::Result<Box<dyn RunningCommand>> {
+        self.spawn("scrcpy", args)
+    }
+
     /// 啟動可輪詢的行程，避免 Wi-Fi 斷線後永遠阻塞；無法啟動時回傳 I/O 錯誤。
     fn spawn(&self, _program: &str, _args: &[&str]) -> io::Result<Box<dyn RunningCommand>> {
         Err(io::Error::new(

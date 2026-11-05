@@ -207,7 +207,7 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
     );
 }
 
@@ -235,7 +235,7 @@ fn start_dry_run_with_keyboard_sdk_in_config_passes_keyboard_sdk() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
     );
 }
 
@@ -343,6 +343,7 @@ esac
             "scrcpy --version",
             "adb devices -l",
             "adb -s R5CW1234ABC shell getprop",
+            "adb -s R5CW1234ABC shell dumpsys display",
             "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local",
         ]
     );
@@ -415,7 +416,7 @@ fn wifi_dry_run_with_empty_path_prints_network_serial_without_external_commands(
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
     );
 }
 #[test]
@@ -540,5 +541,40 @@ fn gui_help_does_not_need_a_display_server() {
         String::from_utf8(output.stdout)
             .unwrap()
             .contains("dex2pc gui")
+    );
+}
+
+#[test]
+fn no_freeform_dry_run_omits_display_setup() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--no-freeform"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("PATH", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        !String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("set-display-windowing-mode")
+    );
+}
+
+#[test]
+fn config_can_disable_freeform() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "freeform = false\n").unwrap();
+    let output = dex2pc()
+        .args(["config"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("freeform = false")
     );
 }
