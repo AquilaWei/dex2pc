@@ -170,6 +170,7 @@ struct App {
     tray: Option<ksni::blocking::Handle<tray::Tray>>,
     _instance: ipc::Instance,
     address: String,
+    wifi_fields: input::WifiFields,
     pair_address: String,
     code: String,
     busy: bool,
@@ -279,12 +280,7 @@ impl App {
                     self.command.clear();
                     match result {
                         Ok(address) => {
-                            self.address.clone_from(&address);
-                            self.model.options.wifi_address = Some(address);
-                            self.model.options.mode = Some(Mode::Wifi);
-                            self.model.status = Status::Idle;
-                            self.model.error = None;
-                            self.model.save();
+                            self.connected(address);
                         }
                         Err(err) => {
                             self.model.fail(format!(
@@ -337,6 +333,15 @@ impl App {
         if self.model.session.quitting && !self.model.session.running && !self.busy {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+    fn connected(&mut self, address: String) {
+        self.wifi_fields = input::WifiFields::from_saved(Some(&address));
+        self.address.clone_from(&address);
+        self.model.options.wifi_address = Some(address);
+        self.model.options.mode = Some(Mode::Wifi);
+        self.model.status = Status::Idle;
+        self.model.error = None;
+        self.model.save();
     }
     fn environment(&mut self) {
         self.busy = true;
@@ -482,6 +487,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     .spawn()
     .ok();
     let address = model.options.wifi_address.clone().unwrap_or_default();
+    let wifi_fields = input::WifiFields::from_saved(Some(&address));
     let mut app = App {
         model,
         events,
@@ -490,6 +496,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         tray,
         _instance: instance,
         address,
+        wifi_fields,
         pair_address: String::new(),
         code: String::new(),
         busy: true,
@@ -509,7 +516,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         "dex2pc 設定",
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([640.0, 660.0])
+                .with_inner_size([420.0, 520.0])
                 .with_visible(visible),
             ..Default::default()
         },
@@ -702,6 +709,7 @@ mod tests {
                 tray: None,
                 _instance: instance,
                 address: String::new(),
+                wifi_fields: input::WifiFields::default(),
                 pair_address: String::new(),
                 code: String::new(),
                 busy: false,
