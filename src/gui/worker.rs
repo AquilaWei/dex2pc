@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::text::{self, Key};
 use super::{Event, Status};
 use crate::runner::{CommandOutput, CommandRunner, RunningCommand, SystemRunner, TimedOutput};
 use crate::{scrcpy::Options, start};
@@ -49,7 +50,7 @@ fn stop_child(control: &Sender<Control>) -> io::Result<()> {
         return Ok(());
     }
     rx.recv()
-        .map_err(|_| io::Error::other("子行程監控已結束"))?
+        .map_err(|_| io::Error::other(text::zh(Key::MonitorEnded)))?
 }
 struct ControlledChild {
     output: Receiver<io::Result<CommandOutput>>,
@@ -60,7 +61,9 @@ impl RunningCommand for ControlledChild {
         match self.output.try_recv() {
             Ok(output) => output.map(Some),
             Err(mpsc::TryRecvError::Empty) => Ok(None),
-            Err(mpsc::TryRecvError::Disconnected) => Err(io::Error::other("子行程監控已結束")),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err(io::Error::other(text::zh(Key::MonitorEnded)))
+            }
         }
     }
     fn kill(&mut self) -> io::Result<()> {
@@ -138,7 +141,7 @@ impl<R: CommandRunner + Clone + Send + 'static> CommandRunner for SessionRunner<
         });
         started
             .recv()
-            .map_err(|_| io::Error::other("無法啟動子行程監控"))??;
+            .map_err(|_| io::Error::other(text::zh(Key::MonitorFailed)))??;
         let child = ControlledChild {
             output,
             control: control.clone(),
@@ -152,7 +155,7 @@ impl<R: CommandRunner + Clone + Send + 'static> CommandRunner for SessionRunner<
                 },
                 program == "scrcpy" && args != ["--version"],
             ))
-            .map_err(|_| io::Error::other("視窗已結束"))?;
+            .map_err(|_| io::Error::other(text::zh(Key::WindowEnded)))?;
         Ok(Box::new(child))
     }
     fn run(&self, program: &str, args: &[&str]) -> io::Result<CommandOutput> {
@@ -200,7 +203,7 @@ fn command_result(
         TimedOutput::Exited(output) => Ok(output),
         TimedOutput::TimedOut => Err(io::Error::new(
             io::ErrorKind::TimedOut,
-            "指令逾時，請確認手機連線",
+            text::zh(Key::CommandTimeout),
         )),
     }
 }
@@ -222,7 +225,7 @@ impl Write for Messages {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.events
             .send(Event::Log(String::from_utf8_lossy(bytes).into_owned()))
-            .map_err(|_| io::Error::other("視窗已結束"))?;
+            .map_err(|_| io::Error::other(text::zh(Key::WindowEnded)))?;
         self.recent.extend_from_slice(bytes);
         // Keep only recent diagnostics; watch sessions can run indefinitely.
         if self.recent.len() > 32_768 {
@@ -242,19 +245,19 @@ fn session_result(
 ) -> (Status, Option<String>) {
     let reason = match result {
         Ok(0) => return (Status::Idle, None),
-        Ok(code) => format!("投影失敗（exit code {code}）。"),
-        Err(err) => format!("投影失敗：{err}。"),
+        Ok(code) => text::message(Key::SessionExit, &[("{code}", &code.to_string())]),
+        Err(err) => text::message(Key::SessionIo, &[("{detail}", &err.to_string())]),
     };
     let hint = if log.contains("Network is unreachable") || log.contains("No route to host") {
         NETWORK_HINT
     } else if log.contains("尚未授權") || log.contains("unauthorized") {
-        "請解鎖手機並按「允許 USB 偵錯」，再重試。"
+        text::zh(Key::Unauthorized)
     } else if log.contains("scrcpy 以 exit code") || log.contains("無法執行 scrcpy") {
-        "scrcpy 啟動或執行失敗；請確認版本至少為 3.2，並依下方訊息檢查手機連線後重試。"
+        text::zh(Key::ScrcpyHint)
     } else if mode == crate::preferences::Mode::Wifi {
         NETWORK_HINT
     } else {
-        "請檢查手機連線與環境，依下方訊息處理後重試。"
+        text::zh(Key::UsbRecovery)
     };
     let mut message = format!("{reason}{hint}");
     let mut lines = log
@@ -278,7 +281,7 @@ fn session_result(
     (Status::Error, Some(message))
 }
 
-pub(super) const NETWORK_HINT: &str = "手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。";
+pub(super) const NETWORK_HINT: &str = text::zh(Key::Network);
 
 pub fn session(events: Sender<Event>, mut options: Options) {
     thread::spawn(move || {
@@ -311,7 +314,7 @@ pub fn session(events: Sender<Event>, mut options: Options) {
                     Path::new("/sys"),
                     &mut out,
                 ),
-                None => Err(io::Error::other("未設定 wifi_address，請先連線")),
+                None => Err(io::Error::other(text::zh(Key::NoAddress))),
             },
         };
         let (status, error) = session_result(
@@ -342,14 +345,14 @@ mod tests {
         assert_eq!(
             session_result(Ok(1), crate::preferences::Mode::Wifi,
                 "failed to connect to '192.168.12.137:5555': Network is unreachable\nWi-Fi 連線失敗：192.168.12.137:5555\n").1,
-            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。\nfailed to connect to '192.168.12.137:5555': Network is unreachable\nWi-Fi 連線失敗：192.168.12.137:5555".into())
+            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請確認同一 Wi-Fi 並開啟無線偵錯，再重新掃描或重新配對。\nfailed to connect to '192.168.12.137:5555': Network is unreachable\nWi-Fi 連線失敗：192.168.12.137:5555".into())
         );
     }
     #[test]
     fn no_route_reports_changed_ip_and_current_wireless_debugging_address() {
         assert_eq!(
             session_result(Ok(1), crate::preferences::Mode::Wifi, "No route to host\n").1,
-            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。\nNo route to host".into())
+            Some("投影失敗（exit code 1）。手機與電腦可能位於不同網路，或手機 IP 已變更。請確認同一 Wi-Fi 並開啟無線偵錯，再重新掃描或重新配對。\nNo route to host".into())
         );
     }
     #[test]
@@ -357,7 +360,7 @@ mod tests {
         assert_eq!(
             session_result(Ok(1), crate::preferences::Mode::Usb,
                 "裝置 phone 尚未授權：請在手機上按「允許 USB 偵錯」\n環境未就緒，未啟動 scrcpy；請依上面的訊息處理後再執行\n").1,
-            Some("投影失敗（exit code 1）。請解鎖手機並按「允許 USB 偵錯」，再重試。\n裝置 phone 尚未授權：請在手機上按「允許 USB 偵錯」".into())
+            Some("投影失敗（exit code 1）。請解鎖手機並按「允許 USB 偵錯」。\n裝置 phone 尚未授權：請在手機上按「允許 USB 偵錯」".into())
         );
     }
     #[test]
@@ -372,7 +375,7 @@ mod tests {
     fn io_error_has_a_recovery_message() {
         assert_eq!(
             session_result(Err(io::Error::other("指令逾時，請確認手機連線")), crate::preferences::Mode::Wifi, "").1,
-            Some("投影失敗：指令逾時，請確認手機連線。手機與電腦可能位於不同網路，或手機 IP 已變更。請查看手機「無線偵錯」頁面的目前 IP:埠；或接上 USB 並允許偵錯，再按「切換到 Wi-Fi」。".into())
+            Some("投影失敗：指令逾時，請確認手機連線。手機與電腦可能位於不同網路，或手機 IP 已變更。請確認同一 Wi-Fi 並開啟無線偵錯，再重新掃描或重新配對。".into())
         );
     }
     #[test]

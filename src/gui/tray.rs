@@ -1,19 +1,24 @@
+use super::text::{self, Key};
 use super::{Action, Event, Status};
-use crate::preferences::{Mode, Quality};
+use crate::preferences::{Language, Quality};
 use ksni::menu::{RadioGroup, RadioItem, StandardItem, SubMenu};
 use ksni::{MenuItem, ToolTip};
 use std::sync::mpsc::Sender;
 
 pub struct Tray {
     pub events: Sender<Event>,
-    pub mode: Mode,
     pub quality: Quality,
+    pub language: Language,
+    pub running: bool,
     pub status: Status,
     pub icons: String,
 }
 impl Tray {
     fn send(&self, action: Action) {
         let _ = self.events.send(Event::Action(action));
+    }
+    fn t(&self, key: Key) -> &'static str {
+        text::get(self.language, key)
     }
 }
 fn item(label: &str, action: Action) -> MenuItem<Tray> {
@@ -29,7 +34,7 @@ impl ksni::Tray for Tray {
         "dex2pc".into()
     }
     fn title(&self) -> String {
-        format!("dex2pc：{}", self.status.label())
+        format!("dex2pc: {}", text::status(self.language, self.status))
     }
     fn icon_name(&self) -> String {
         format!("dex2pc-{}", self.status.icon())
@@ -41,7 +46,7 @@ impl ksni::Tray for Tray {
         ToolTip {
             title: self.title(),
             icon_name: self.icon_name(),
-            description: "Samsung DeX 視窗投影".into(),
+            description: self.t(Key::Tooltip).into(),
             ..Default::default()
         }
     }
@@ -54,38 +59,16 @@ impl ksni::Tray for Tray {
     }
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
-            item("開啟 DeX", Action::Start),
-            item("停止 DeX", Action::Stop),
+            item(
+                self.t(if self.running { Key::Stop } else { Key::Start }),
+                if self.running {
+                    Action::Stop
+                } else {
+                    Action::Start
+                },
+            ),
             SubMenu {
-                label: "連線方式".into(),
-                submenu: vec![
-                    RadioGroup {
-                        selected: usize::from(self.mode == Mode::Wifi),
-                        options: vec![
-                            RadioItem {
-                                label: "USB".into(),
-                                ..Default::default()
-                            },
-                            RadioItem {
-                                label: "Wi-Fi".into(),
-                                ..Default::default()
-                            },
-                        ],
-                        select: Box::new(|tray: &mut Self, index| {
-                            tray.send(Action::Mode(if index == 0 {
-                                Mode::Usb
-                            } else {
-                                Mode::Wifi
-                            }));
-                        }),
-                    }
-                    .into(),
-                ],
-                ..Default::default()
-            }
-            .into(),
-            SubMenu {
-                label: "畫質".into(),
+                label: self.t(Key::Quality).into(),
                 submenu: vec![
                     RadioGroup {
                         selected: match self.quality {
@@ -93,20 +76,12 @@ impl ksni::Tray for Tray {
                             Quality::Balanced => 1,
                             Quality::Low => 2,
                         },
-                        options: vec![
-                            RadioItem {
-                                label: "高（16M）".into(),
+                        options: [Key::High, Key::Balanced, Key::Low]
+                            .map(|key| RadioItem {
+                                label: self.t(key).into(),
                                 ..Default::default()
-                            },
-                            RadioItem {
-                                label: "平衡（8M）".into(),
-                                ..Default::default()
-                            },
-                            RadioItem {
-                                label: "低（4M）".into(),
-                                ..Default::default()
-                            },
-                        ],
+                            })
+                            .into(),
                         select: Box::new(|tray: &mut Self, index| {
                             tray.send(Action::Quality(match index {
                                 0 => Quality::High,
@@ -120,45 +95,85 @@ impl ksni::Tray for Tray {
                 ..Default::default()
             }
             .into(),
-            item("切換到 Wi-Fi", Action::SwitchWifi),
-            item("開啟設定視窗…", Action::Show),
-            item("結束", Action::Quit),
+            SubMenu {
+                label: self.t(Key::Language).into(),
+                submenu: vec![
+                    RadioGroup {
+                        selected: usize::from(self.language == Language::En),
+                        options: [Key::Chinese, Key::English]
+                            .map(|key| RadioItem {
+                                label: self.t(key).into(),
+                                ..Default::default()
+                            })
+                            .into(),
+                        select: Box::new(|tray: &mut Self, index| {
+                            tray.send(Action::Language(if index == 0 {
+                                Language::ZhTw
+                            } else {
+                                Language::En
+                            }));
+                        }),
+                    }
+                    .into(),
+                ],
+                ..Default::default()
+            }
+            .into(),
+            item(self.t(Key::Clear), Action::Clear),
+            item(self.t(Key::Show), Action::Show),
+            item(self.t(Key::Quit), Action::Quit),
         ]
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ksni::Tray as _;
-    use std::sync::mpsc;
-    #[test]
-    fn fake_host_start_menu_sends_start_action() {
-        let (events, rx) = mpsc::channel();
-        let mut tray = Tray {
+    fn menu(language: Language) -> Vec<String> {
+        let (events, _) = std::sync::mpsc::channel();
+        Tray {
             events,
-            mode: Mode::Usb,
             quality: Quality::Balanced,
+            language,
+            running: false,
             status: Status::Idle,
             icons: String::new(),
-        };
-        let MenuItem::Standard(item) = tray.menu().remove(0) else {
-            panic!("缺少開啟動作");
-        };
-        (item.activate)(&mut tray);
-        assert!(matches!(rx.recv().unwrap(), Event::Action(Action::Start)));
+        }
+        .menu()
+        .into_iter()
+        .map(|item| match item {
+            MenuItem::Standard(item) => item.label,
+            MenuItem::SubMenu(item) => item.label,
+            _ => panic!("unexpected menu item"),
+        })
+        .collect()
     }
     #[test]
-    fn error_tooltip_shows_error_state() {
-        let (events, _) = mpsc::channel();
-        let tray = Tray {
-            events,
-            mode: Mode::Usb,
-            quality: Quality::Balanced,
-            status: Status::Error,
-            icons: String::new(),
-        };
-        assert_eq!(tray.tool_tip().title, "dex2pc：錯誤");
-        assert_eq!(tray.icon_name(), "dex2pc-error");
+    fn chinese_menu_order() {
+        assert_eq!(
+            menu(Language::ZhTw),
+            [
+                "開啟 DeX",
+                "畫質",
+                "語言",
+                "清除連線設定",
+                "顯示視窗",
+                "結束"
+            ]
+        );
+    }
+    #[test]
+    fn english_menu_order() {
+        assert_eq!(
+            menu(Language::En),
+            [
+                "Start DeX",
+                "Quality",
+                "Language",
+                "Clear connection settings",
+                "Show window",
+                "Quit"
+            ]
+        );
     }
 }

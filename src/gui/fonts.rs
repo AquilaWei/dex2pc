@@ -2,7 +2,7 @@ use crate::runner::{CommandRunner, SystemRunner};
 use eframe::egui;
 use std::io::{self, Write};
 
-pub(super) const NOTICE: &str = "CJK font missing. Install google-noto-sans-cjk-fonts (Fedora) or fonts-noto-cjk (Debian/Ubuntu), then restart.";
+pub(super) const NOTICE: &str = super::text::zh(super::text::Key::FontMissing);
 const FALLBACKS: &[&str] = &[
     "/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/google-noto-sans-cjk-vf-fonts/NotoSansCJK-VF.ttc",

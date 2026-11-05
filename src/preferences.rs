@@ -1,6 +1,43 @@
 use std::fmt;
 use std::str::FromStr;
 
+/// GUI language; CLI output remains independent of this preference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Language {
+    ZhTw,
+    En,
+}
+impl Language {
+    pub fn from_locale(lc_all: Option<&str>, lang: Option<&str>) -> Self {
+        if lc_all
+            .filter(|s| !s.is_empty())
+            .or(lang)
+            .unwrap_or("")
+            .starts_with("zh")
+        {
+            Self::ZhTw
+        } else {
+            Self::En
+        }
+    }
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ZhTw => "zh-TW",
+            Self::En => "en",
+        }
+    }
+}
+impl FromStr for Language {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "zh-TW" => Ok(Self::ZhTw),
+            "en" => Ok(Self::En),
+            _ => Err("要是 zh-TW 或 en".into()),
+        }
+    }
+}
+
 /// GUI 的傳輸方式；CLI 仍以自己的參數決定傳輸，不自動套用此選擇。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {

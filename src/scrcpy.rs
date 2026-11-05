@@ -145,6 +145,7 @@ impl std::error::Error for InvalidInputMode {}
 pub struct Options {
     pub mode: Option<crate::preferences::Mode>,
     pub quality: Option<crate::preferences::Quality>,
+    pub language: Option<crate::preferences::Language>,
     /// 已儲存的無線 adb 位址；只有 --wifi 使用，不傳給 scrcpy。
     pub wifi_address: Option<String>,
     pub resolution: Resolution,
@@ -175,6 +176,7 @@ impl Default for Options {
             wifi_address: None,
             mode: None,
             quality: None,
+            language: None,
             video_bit_rate: None,
             audio: true,
             keyboard: Some(InputMode::Uhid),
@@ -365,6 +367,7 @@ mod tests {
             wifi_address: None,
             mode: None,
             quality: None,
+            language: None,
         };
 
         assert_eq!(
