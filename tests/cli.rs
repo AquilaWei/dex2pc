@@ -207,7 +207,7 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 
@@ -235,7 +235,7 @@ fn start_dry_run_with_keyboard_sdk_in_config_passes_keyboard_sdk() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 
@@ -416,7 +416,7 @@ fn wifi_dry_run_with_empty_path_prints_network_serial_without_external_commands(
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
+        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 #[test]
@@ -576,5 +576,101 @@ fn config_can_disable_freeform() {
         String::from_utf8(output.stdout)
             .unwrap()
             .contains("freeform = false")
+    );
+}
+
+#[test]
+fn default_dry_run_explains_fullscreen() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("fullscreen（wm mode 1）")
+    );
+}
+
+#[test]
+fn freeform_flag_dry_run_explains_mode_five() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--freeform"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("set-display-windowing-mode -d <new-display-id> 5")
+    );
+}
+
+#[test]
+fn freeform_config_dry_run_explains_mode_five() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "freeform = true\n").unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("set-display-windowing-mode -d <new-display-id> 5")
+    );
+}
+
+#[test]
+fn freeform_flags_conflict() {
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--freeform", "--no-freeform"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn freeform_flag_overrides_disabled_config() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "freeform = false\n").unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--freeform"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("set-display-windowing-mode -d <new-display-id> 5")
+    );
+}
+
+#[test]
+fn no_freeform_flag_overrides_enabled_config() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("dex2pc")).unwrap();
+    std::fs::write(dir.path().join("dex2pc/config.toml"), "freeform = true\n").unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--no-freeform"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("fullscreen（wm mode 1）")
     );
 }

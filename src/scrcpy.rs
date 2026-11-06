@@ -181,7 +181,7 @@ impl Default for Options {
             language: None,
             video_bit_rate: None,
             audio: true,
-            freeform: true,
+            freeform: false,
             keyboard: Some(InputMode::Uhid),
             mouse: None,
         }
@@ -226,6 +226,11 @@ pub fn build_args(options: &Options, serial: Option<&str>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_options_disable_freeform() {
+        assert!(!Options::default().freeform);
+    }
 
     #[test]
     fn build_args_with_defaults_creates_1080p_dex_display_with_dex_input() {
@@ -365,7 +370,7 @@ mod tests {
             window_title: "DeX".to_string(),
             video_bit_rate: Some("20M".to_string()),
             audio: false,
-            freeform: true,
+            freeform: false,
             keyboard: Some(InputMode::Aoa),
             mouse: Some(InputMode::Sdk),
             wifi_address: None,

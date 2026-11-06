@@ -161,9 +161,14 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
 
 /// 可覆寫設定檔的 CLI 參數；沒給的參數沿用設定檔（或內建預設值）。
 #[derive(Debug, Default, Args)]
+// clap 以獨立布林欄位接收互斥的啟用／停用旗標。
+#[allow(clippy::struct_excessive_bools)]
 pub struct Overrides {
-    /// 關閉 DeX 自由視窗（設定檔 freeform = false 也可關閉）
-    #[arg(long)]
+    /// 啟用 DeX 自由視窗（或設定 freeform = true）；預設全螢幕，與 --no-freeform 互斥
+    #[arg(long, conflicts_with = "no_freeform")]
+    pub freeform: bool,
+    /// 關閉 DeX 自由視窗（預設全螢幕）；與 --freeform 互斥
+    #[arg(long, conflicts_with = "freeform")]
     pub no_freeform: bool,
     /// 虛擬顯示器解析度，例如 2560x1440
     #[arg(long)]
@@ -206,6 +211,9 @@ impl Overrides {
         }
         if self.audio {
             options.audio = true;
+        }
+        if self.freeform {
+            options.freeform = true;
         }
         if self.no_freeform {
             options.freeform = false;
@@ -630,6 +638,7 @@ mod tests {
             video_bit_rate: Some("20M".to_string()),
             audio: false,
             no_audio: true,
+            freeform: false,
             no_freeform: false,
             keyboard: Some(InputMode::Uhid),
             mouse: Some(InputMode::Sdk),
@@ -719,7 +728,7 @@ mod tests {
              dpi = 160\n\
              video_bit_rate = （scrcpy 預設）\n\
              audio = true\n\
-             freeform = true\n\
+             freeform = false\n\
              keyboard = uhid\n\
              mouse = （scrcpy 預設）\n\
              window_title = Samsung DeX\n"
@@ -752,7 +761,7 @@ mod tests {
              dpi = 160\n\
              video_bit_rate = 16M\n\
              audio = false\n\
-             freeform = true\n\
+             freeform = false\n\
              keyboard = uhid\n\
              mouse = aoa\n\
              window_title = Samsung DeX\n"

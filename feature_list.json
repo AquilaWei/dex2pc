@@ -141,12 +141,12 @@
     },
     {
       "id": "F-freeform-display",
-      "description": "CLI 與 GUI 預設讓新建 scrcpy DeX 顯示器上的 app 使用自由視窗，不修改全域設定",
+      "description": "CLI 與 GUI 預設讓新建 scrcpy DeX 顯示器上的 app 全螢幕開啟，可選擇自由視窗，不修改全域設定",
       "steps": [
-        "啟動前後比對 shell 擁有的 scrcpy display，唯一新 display 設 wm windowing mode 5；無候選或多候選不修改其他 session",
-        "設定檔 freeform = false 或 CLI --no-freeform 可停用；失敗時警告且繼續投影",
+        "啟動前後比對 shell 擁有的 scrcpy display，唯一新 display 預設設 wm windowing mode 1，啟用自由視窗時設 mode 5；無候選或多候選不修改其他 session",
+        "設定檔 freeform = true 或 CLI --freeform 可啟用；--no-freeform 可停用且與 --freeform 互斥；失敗時警告且繼續投影",
         "固定 dumpsys 片段、指令組成、停用與失敗繼續投影測試通過",
-        "實機 wm 指令與不帶 --windowingMode 的 Settings task mode=freeform 已驗證；新版 CLI／GUI 桌面拖曳縮放、重開與停用仍待使用者驗收"
+        "實機 wm 指令與不帶 --windowingMode 的 Settings task mode=freeform 已驗證；新版 CLI／GUI 預設全螢幕與啟用自由視窗後的桌面拖曳縮放、重開仍待使用者驗收"
       ],
       "passes": false
     }
