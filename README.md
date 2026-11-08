@@ -1,6 +1,6 @@
 # dex2pc
 
-![version](https://img.shields.io/badge/version-0.3.9-blue)
+![version](https://img.shields.io/badge/version-0.3.10-blue)
 ![platform](https://img.shields.io/badge/platform-Fedora%20%7C%20Debian%20%7C%20Ubuntu-294172)
 
 **透過 USB-C 線或 Wi-Fi，把 Samsung DeX 變成 Linux 電腦上的一個視窗，並直接用電腦的鍵盤滑鼠操作。**
@@ -185,15 +185,16 @@ dex2pc start --watch                       # 拔線或斷線後，手機接回�
 
 **不需要。** 只要開啟 USB 偵錯並允許這台電腦，dex2pc 不會改任何 `adb settings` 或全域開發人員設定。
 
-CLI 與 GUI 預設在 scrcpy 建立顯示器後，以 `wm set-display-windowing-mode -d <id> 5`
-讓該顯示器上的 app 使用可拖曳、可縮放的自由視窗。程式會比對啟動前後的
-`dumpsys display`，只選擇 shell 擁有、uniqueId 含 `,scrcpy,` 的唯一新顯示器；
-無法辨識、出現多個候選、指令不支援或逾時時會警告並繼續投影，app 可能維持全螢幕。
+CLI 與 GUI 預設讓 app 全螢幕開啟：scrcpy 建立顯示器後，以
+`wm set-display-windowing-mode -d <id> 1` 明確設定 fullscreen，避免保留先前的自由視窗模式。
+程式會比對啟動前後的 `dumpsys display`，只選擇 shell 擁有、uniqueId 含 `,scrcpy,`
+的唯一新顯示器；無法辨識、出現多個候選、指令不支援或逾時時會警告並繼續投影。
 關閉投影時 scrcpy 會移除顯示器，重開及自動重連時重新設定。
 
-關閉此功能：`dex2pc start --no-freeform`，或在設定檔加入 `freeform = false`
-（也適用 GUI；下次開啟投影生效）。停用時會對同樣辨識出的唯一新顯示器明確設定 fullscreen（mode 1），
-避免 Android 依 uniqueId 保留先前的自由視窗模式；失敗時也會警告並繼續投影。`dex2pc start --dry-run` 會說明啟動後的設定步驟，
+啟用可拖曳、可縮放的自由視窗：`dex2pc start --freeform`，或在設定檔加入
+`freeform = true`（也適用 GUI；下次開啟投影生效），改用 mode 5。
+CLI 旗標優先於設定檔；`--no-freeform` 可覆寫設定檔並關閉自由視窗，
+與 `--freeform` 同時使用會報錯。`dex2pc start --dry-run` 會說明啟動後的設定步驟，
 不執行 adb 或修改手機。
 
 已在實機確認（2026-10-10）：**Galaxy S23（SM-S9180）、One UI 8.5（Android 16）、scrcpy 5.0.1**，
@@ -325,7 +326,7 @@ resolution = "1920x1080"   # 虛擬顯示器解析度
 dpi = 160                  # 數字越大介面越大
 video_bit_rate = "16M"     # 省略時用 scrcpy 預設（8M）；小字模糊時調高
 audio = true               # false 時不轉送手機音訊
-freeform = true            # false 時不自動啟用 DeX app 自由視窗（含 GUI）
+freeform = false           # 預設全螢幕；true 啟用可拖曳的 DeX app 自由視窗（含 GUI）
 keyboard = "uhid"          # sdk、uhid、aoa、disabled；省略時用 uhid（sdk 在 DeX 上打不出字）
 mouse = "sdk"              # 同上；省略時用 scrcpy 預設
 window_title = "Samsung DeX"
@@ -355,8 +356,8 @@ cargo run --example sync_version_badge
 - [x] **鍵盤**：英文輸入、快捷鍵、**中文輸入**（用電腦的輸入法打字能否送進手機）（2026-10-10）
 - [x] **剪貼簿**：電腦與手機之間複製貼上（2026-10-10）
 - [x] **display 層級自由視窗指令**（2026-11-05，SM-S9180／One UI 8.5／Android 16／scrcpy 5.0.1）：`wm set-display-windowing-mode -d 6 5` 後，不帶 `--windowingMode` 的 Settings 啟動與既有 app task 皆為 `mode=freeform`；已還原實驗的 display 模式。此項只驗證指令與 task 模式。
-- [ ] **DeX 桌面操作**：用新版 CLI／GUI 投影，從 DeX 桌面開 app，確認能拖曳、縮放。
-- [ ] **重開投影**：關閉再開啟，從桌面開 app 仍可拖曳、縮放。
+- [ ] **預設全螢幕**：不設定 freeform，用新版 CLI／GUI 投影，從 DeX 桌面開 app，確認以全螢幕開啟。
+- [ ] **啟用自由視窗**：設定 `freeform = true`，用新版 CLI／GUI 投影，確認 app 可拖曳、縮放；關閉再開啟後仍生效。
 - [ ] **停用自由視窗**：設定 `freeform = false` 或加 `--no-freeform`，重開投影後 app 回到全螢幕。
 - [x] **音訊**：手機的聲音從電腦播出（2026-10-10）；`--no-audio` 時不播
 - [x] **拔線重連**：`dex2pc start --watch` 時拔掉再接回 USB 線，視窗會自動重新開啟（2026-10-10）

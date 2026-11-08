@@ -69,7 +69,7 @@ fn check_tag_rejects_a_minor_tag_that_differs_from_cargo_toml() {
     let output = check_tag("v0.4.0");
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("0.3.9"), "{}", stderr(&output));
+    assert!(stderr(&output).contains("0.3.10"), "{}", stderr(&output));
 }
 
 #[test]

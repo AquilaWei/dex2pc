@@ -144,7 +144,7 @@ fn warning(out: &mut dyn Write, reason: &str, enabled: bool) -> io::Result<()> {
     if enabled {
         writeln!(
             out,
-            "警告：無法設定 DeX 自由視窗：{reason}；投影繼續，app 可能保留原有模式。可用 --no-freeform 或 freeform = false 關閉自由視窗。"
+            "警告：無法設定 DeX 自由視窗：{reason}；投影繼續，app 可能保留原有模式。預設全螢幕；可用 --freeform 或 freeform = true 啟用自由視窗，--no-freeform 可關閉。"
         )
     } else {
         writeln!(

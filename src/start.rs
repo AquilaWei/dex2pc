@@ -363,7 +363,7 @@ pub fn dry_run(options: &Options, serial: Option<&str>, out: &mut dyn Write) -> 
     } else {
         writeln!(
             out,
-            "# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；失敗時警告並繼續投影。"
+            "# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。"
         )?;
     }
     Ok(())
@@ -865,7 +865,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
+            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
         );
     }
 
@@ -877,7 +877,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform: 比對啟動前後 adb dumpsys display；唯一的新 scrcpy 顯示器就緒後執行：\n# adb -s <serial> shell wm set-display-windowing-mode -d <new-display-id> 5（失敗時警告，繼續投影）\n"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
         );
     }
 
