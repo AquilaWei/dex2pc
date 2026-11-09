@@ -191,6 +191,8 @@ CLI 與 GUI 預設讓 app 全螢幕開啟：scrcpy 建立顯示器後，以
 的唯一新顯示器；無法辨識、出現多個候選、指令不支援或逾時時會警告並繼續投影。
 關閉投影時 scrcpy 會移除顯示器，重開及自動重連時重新設定。
 
+投影時預設關閉手機面板並保持 DeX 畫面亮著；結束投影後手機原本的休眠時間會還原。可用 `--no-screen-off` 或設定檔 `screen_off = false` 停用；`--screen-off` 可覆寫設定檔啟用，兩個旗標互斥。此效果仍需實機驗收。
+
 啟用可拖曳、可縮放的自由視窗：`dex2pc start --freeform`，或在設定檔加入
 `freeform = true`（也適用 GUI；下次開啟投影生效），改用 mode 5。
 CLI 旗標優先於設定檔；`--no-freeform` 可覆寫設定檔並關閉自由視窗，
@@ -326,6 +328,7 @@ resolution = "1920x1080"   # 虛擬顯示器解析度
 dpi = 160                  # 數字越大介面越大
 video_bit_rate = "16M"     # 省略時用 scrcpy 預設（8M）；小字模糊時調高
 audio = true               # false 時不轉送手機音訊
+screen_off = true          # 投影時關閉手機面板並保持 DeX 畫面亮著
 freeform = false           # 預設全螢幕；true 啟用可拖曳的 DeX app 自由視窗（含 GUI）
 keyboard = "uhid"          # sdk、uhid、aoa、disabled；省略時用 uhid（sdk 在 DeX 上打不出字）
 mouse = "sdk"              # 同上；省略時用 scrcpy 預設
