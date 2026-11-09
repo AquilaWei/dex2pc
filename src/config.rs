@@ -9,7 +9,7 @@ use clap::Args;
 use crate::scrcpy::{Dpi, InputMode, Options, Resolution};
 
 /// 設定檔中可用的欄位；出現其他欄位就報錯，避免打錯字的設定被默默忽略。
-const FIELDS: [&str; 12] = [
+const FIELDS: [&str; 13] = [
     "resolution",
     "dpi",
     "video_bit_rate",
@@ -22,6 +22,7 @@ const FIELDS: [&str; 12] = [
     "quality",
     "language",
     "freeform",
+    "screen_off",
 ];
 
 /// 算出設定檔位置：`$XDG_CONFIG_HOME/dex2pc/config.toml`，沒設時用 `$HOME/.config/dex2pc/config.toml`。
@@ -105,6 +106,11 @@ fn parse(text: &str, path: &Path) -> Result<Options, ConfigError> {
                         .to_string(),
                 );
             }
+            "screen_off" => {
+                options.screen_off = value
+                    .as_bool()
+                    .ok_or_else(|| invalid("要是 true 或 false".to_string()))?;
+            }
             "freeform" => {
                 options.freeform = value
                     .as_bool()
@@ -170,6 +176,12 @@ pub struct Overrides {
     /// 關閉 DeX 自由視窗（預設全螢幕）；與 --freeform 互斥
     #[arg(long, conflicts_with = "freeform")]
     pub no_freeform: bool,
+    /// 投影時關閉手機面板並保持 DeX 畫面亮著；與 --no-screen-off 互斥
+    #[arg(long, conflicts_with = "no_screen_off")]
+    pub screen_off: bool,
+    /// 停用手機面板關閉與保持喚醒；與 --screen-off 互斥
+    #[arg(long, conflicts_with = "screen_off")]
+    pub no_screen_off: bool,
     /// 虛擬顯示器解析度，例如 2560x1440
     #[arg(long)]
     pub resolution: Option<Resolution>,
@@ -211,6 +223,12 @@ impl Overrides {
         }
         if self.audio {
             options.audio = true;
+        }
+        if self.screen_off {
+            options.screen_off = true;
+        }
+        if self.no_screen_off {
+            options.screen_off = false;
         }
         if self.freeform {
             options.freeform = true;
@@ -261,6 +279,7 @@ pub fn show(
     )?;
     writeln!(out, "audio = {}", options.audio)?;
     writeln!(out, "freeform = {}", options.freeform)?;
+    writeln!(out, "screen_off = {}", options.screen_off)?;
     writeln!(out, "keyboard = {}", mode(options.keyboard))?;
     writeln!(out, "mouse = {}", mode(options.mouse))?;
     writeln!(out, "window_title = {}", options.window_title)
@@ -419,6 +438,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -450,6 +472,9 @@ mod tests {
                 "--mouse=aoa",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -573,7 +598,7 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "設定檔 /xdg/dex2pc/config.toml 有未知欄位 resolutoin；\
-             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language、freeform"
+             可用的欄位：resolution、dpi、video_bit_rate、audio、keyboard、mouse、window_title、wifi_address、mode、quality、language、freeform、screen_off"
         );
     }
 
@@ -612,6 +637,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -640,6 +668,8 @@ mod tests {
             no_audio: true,
             freeform: false,
             no_freeform: false,
+            screen_off: false,
+            no_screen_off: false,
             keyboard: Some(InputMode::Uhid),
             mouse: Some(InputMode::Sdk),
             window_title: Some("DeX".to_string()),
@@ -658,6 +688,9 @@ mod tests {
                 "--mouse=sdk",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -679,6 +712,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -729,6 +765,7 @@ mod tests {
              video_bit_rate = （scrcpy 預設）\n\
              audio = true\n\
              freeform = false\n\
+             screen_off = true\n\
              keyboard = uhid\n\
              mouse = （scrcpy 預設）\n\
              window_title = Samsung DeX\n"
@@ -762,6 +799,7 @@ mod tests {
              video_bit_rate = 16M\n\
              audio = false\n\
              freeform = false\n\
+             screen_off = true\n\
              keyboard = uhid\n\
              mouse = aoa\n\
              window_title = Samsung DeX\n"
@@ -829,6 +867,15 @@ fn write_gui_table(path: &Path, table: &toml::Table) -> io::Result<()> {
 mod gui_tests {
     use super::*;
     use crate::preferences::{Mode, Quality};
+    #[test]
+    fn config_screen_off_false_disables_screen_off() {
+        assert!(
+            !parse("screen_off = false", Path::new("/cfg"))
+                .unwrap()
+                .screen_off
+        );
+    }
+
     #[test]
     fn invalid_mode_reports_path_and_field() {
         assert_eq!(

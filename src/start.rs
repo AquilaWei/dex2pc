@@ -474,7 +474,7 @@ mod tests {
                 "scrcpy --version".to_string(),
                 "adb devices -l".to_string(),
                 "adb -s R5CW1234ABC shell getprop".to_string(),
-                "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
+                "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake"
                     .to_string(),
             ]
         );
@@ -493,7 +493,7 @@ mod tests {
 
         assert_eq!(
             runner.calls.borrow().last().unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake"
         );
     }
 
@@ -513,7 +513,7 @@ mod tests {
         let (_, out) = start(&runner, &Options::default());
 
         assert!(out.contains(
-            "啟動：scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n"
+            "啟動：scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake\n"
         ));
     }
 
@@ -671,7 +671,7 @@ mod tests {
         }
     }
 
-    const LAUNCH: &str = "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local";
+    const LAUNCH: &str = "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake";
     const WAIT: &str = "adb -s R5CW1234ABC wait-for-device";
 
     fn watch(runner: &WatchRunner) -> (u8, String) {
@@ -865,7 +865,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
+            "scrcpy --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
         );
     }
 
@@ -877,7 +877,7 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
         );
     }
 
@@ -997,7 +997,7 @@ mod wifi_tests {
                 "scrcpy --version",
                 "adb devices -l",
                 "adb -s phone:5555 shell getprop",
-                "scrcpy --serial=phone:5555 --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local"
+                "scrcpy --serial=phone:5555 --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400"
             ]
         );
     }

@@ -207,7 +207,7 @@ fn start_dry_run_prints_scrcpy_command_from_config_and_flags() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=2560x1440/160 '--window-title=Samsung DeX' --video-bit-rate=16M --no-audio --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 
@@ -235,7 +235,7 @@ fn start_dry_run_with_keyboard_sdk_in_config_passes_keyboard_sdk() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
+        "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 '--window-title=Samsung DeX' --no-audio --keyboard=sdk --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 
@@ -344,7 +344,7 @@ esac
             "adb devices -l",
             "adb -s R5CW1234ABC shell getprop",
             "adb -s R5CW1234ABC shell dumpsys display",
-            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local",
+            "scrcpy --serial=R5CW1234ABC --new-display=1920x1080/160 --window-title=Samsung DeX --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400 --stay-awake",
         ]
     );
 }
@@ -416,7 +416,7 @@ fn wifi_dry_run_with_empty_path_prints_network_serial_without_external_commands(
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
+        "scrcpy --serial=192.168.1.20:5555 --new-display=1920x1080/160 '--window-title=Samsung DeX' --keyboard=uhid --mouse-bind=++++:bhsn --display-ime-policy=local --turn-screen-off --screen-off-timeout=86400\n# freeform disabled: 對唯一的新 scrcpy 顯示器設定 fullscreen（wm mode 1），清除可能保留的自由視窗模式；用 --freeform 或 freeform = true 啟用自由視窗，預設全螢幕；失敗時警告並繼續投影。\n"
     );
 }
 #[test]
@@ -672,5 +672,36 @@ fn no_freeform_flag_overrides_enabled_config() {
         String::from_utf8(output.stdout)
             .unwrap()
             .contains("fullscreen（wm mode 1）")
+    );
+}
+
+#[test]
+fn no_screen_off_dry_run_omits_screen_off_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--no-screen-off"])
+        .env("XDG_CONFIG_HOME", dir.path())
+        .env("PATH", dir.path())
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        !String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("--turn-screen-off")
+    );
+}
+
+#[test]
+fn screen_off_flags_conflict() {
+    let output = dex2pc()
+        .args(["start", "--dry-run", "--screen-off", "--no-screen-off"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("cannot be used with")
     );
 }

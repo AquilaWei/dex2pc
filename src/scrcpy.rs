@@ -156,6 +156,8 @@ pub struct Options {
     pub audio: bool,
     /// 只對新建的 scrcpy 顯示器套用自由視窗；手機不支援時警告並繼續投影。
     pub freeform: bool,
+    /// 投影時關閉手機面板並延長休眠時間，維持 DeX 顯示。
+    pub screen_off: bool,
     /// `None` 時不加參數，沿用 scrcpy 預設（sdk）。
     pub keyboard: Option<InputMode>,
     /// `None` 時不加參數，沿用 scrcpy 預設。
@@ -182,6 +184,7 @@ impl Default for Options {
             video_bit_rate: None,
             audio: true,
             freeform: false,
+            screen_off: true,
             keyboard: Some(InputMode::Uhid),
             mouse: None,
         }
@@ -220,6 +223,13 @@ pub fn build_args(options: &Options, serial: Option<&str>) -> Vec<String> {
     args.push("--mouse-bind=++++:bhsn".to_string());
     // 讓輸入法（含中文選字窗）顯示在 DeX 視窗裡，而不是手機螢幕上
     args.push("--display-ime-policy=local".to_string());
+    if options.screen_off {
+        args.push("--turn-screen-off".to_string());
+        args.push("--screen-off-timeout=86400".to_string());
+        if serial.is_none_or(|serial| !serial.contains(':')) {
+            args.push("--stay-awake".to_string());
+        }
+    }
     args
 }
 
@@ -244,6 +254,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -254,6 +267,45 @@ mod tests {
 
         assert_eq!(
             args,
+            [
+                "--serial=R5CW1234ABC",
+                "--new-display=1920x1080/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
+            ]
+        );
+    }
+
+    #[test]
+    fn wifi_screen_off_omits_stay_awake() {
+        assert_eq!(
+            build_args(&Options::default(), Some("192.168.1.20:5555")),
+            [
+                "--serial=192.168.1.20:5555",
+                "--new-display=1920x1080/160",
+                "--window-title=Samsung DeX",
+                "--keyboard=uhid",
+                "--mouse-bind=++++:bhsn",
+                "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_screen_off_omits_all_screen_flags() {
+        let options = Options {
+            screen_off: false,
+            ..Options::default()
+        };
+        assert_eq!(
+            build_args(&options, Some("R5CW1234ABC")),
             [
                 "--serial=R5CW1234ABC",
                 "--new-display=1920x1080/160",
@@ -280,6 +332,9 @@ mod tests {
                 "--keyboard=sdk",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -298,6 +353,9 @@ mod tests {
                 "--window-title=Samsung DeX",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -318,6 +376,9 @@ mod tests {
                 "--mouse=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -338,6 +399,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -358,6 +422,9 @@ mod tests {
                 "--keyboard=uhid",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -371,6 +438,7 @@ mod tests {
             video_bit_rate: Some("20M".to_string()),
             audio: false,
             freeform: false,
+            screen_off: true,
             keyboard: Some(InputMode::Aoa),
             mouse: Some(InputMode::Sdk),
             wifi_address: None,
@@ -391,6 +459,9 @@ mod tests {
                 "--mouse=sdk",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
@@ -410,6 +481,9 @@ mod tests {
                 "--keyboard=disabled",
                 "--mouse-bind=++++:bhsn",
                 "--display-ime-policy=local",
+                "--turn-screen-off",
+                "--screen-off-timeout=86400",
+                "--stay-awake",
             ]
         );
     }
